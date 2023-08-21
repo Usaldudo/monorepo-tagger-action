@@ -10,8 +10,10 @@ describe('get component last tag', () => {
       data: [{ name: 'component1-last-tag' }, { name: 'component1-another-tag' }],
     });
     octokit = {
-      repos: {
-        listTags: listTagMock,
+      rest: {
+        repos: {
+          listTags: listTagMock,
+        },
       },
     };
   });

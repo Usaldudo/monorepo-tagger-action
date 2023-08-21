@@ -29,7 +29,8 @@ async function run(
     commitMessage,
     commitAuthor,
     commitAuthorEmail,
-  }
+    skipCommit,
+  },
 ) {
   const tags = newTagger(octokit, owner, repo);
   const branches = newBranches(octokit, owner, repo);
@@ -54,6 +55,7 @@ async function run(
     commitMessage,
     commitAuthor,
     commitAuthorEmail,
+    skipCommit,
   };
 
   console.log('Options for the action', options);
@@ -117,7 +119,8 @@ async function run(
         branchToTag,
         commitMessage,
         commitAuthor,
-        commitAuthorEmail
+        commitAuthorEmail,
+        skipCommit,
       );
       console.log(`Version updated in file(s)`);
     }

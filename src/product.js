@@ -49,7 +49,7 @@ module.exports = function (tags, branches) {
     if (type === TYPE_PRE_RELEASE) {
       const preReleaseVersion = await branches.calcPreReleaseVersionBasedOnReleaseBranches(
         currentMajor,
-        releaseBranchPrefix
+        releaseBranchPrefix,
       );
       return tags.calcPrereleaseTag(preReleaseVersion, preReleaseName);
     }

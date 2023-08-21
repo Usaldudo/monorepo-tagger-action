@@ -56,6 +56,10 @@ inputs:
     description: 'Enable dry run mode, e.g. "true" or "false"'
     required: false
     default: 'false'
+  skip-commit:
+    description: "Do not create a release commit"
+    default: "false"
+    required: false
 
 outputs:
   tag:
@@ -64,5 +68,5 @@ outputs:
     description: 'The new version tag that was created'
 
 runs:
-  using: 'node12'
+  using: 'node16'
   main: 'dist/index.js'

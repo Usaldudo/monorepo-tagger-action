@@ -18,6 +18,7 @@ const useTagInVersionsFile = core.getInput('use-tag-in-versions-file');
 const commitMessage = core.getInput('commit-message');
 const commitAuthor = core.getInput('commit-author');
 const commitAuthorEmail = core.getInput('commit-author-email');
+const skipCommit = core.getBooleanInput('skip-commit');
 
 // Initialize Octokit
 const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
@@ -39,6 +40,7 @@ try {
     commitMessage,
     commitAuthor,
     commitAuthorEmail,
+    skipCommit,
   });
 } catch (e) {
   core.setFailed(`RUN ERROR: \n\t${e}`);

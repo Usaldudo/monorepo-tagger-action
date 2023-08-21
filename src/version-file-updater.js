@@ -13,7 +13,7 @@ module.exports = function () {
    * @param branch The branch to make the changes
    * @returns sha The commit SHA that was made with the version update
    */
-  async function updateVersionInFileAndCommit(files, version, branch, commitMessage, author, authorEmail) {
+  async function updateVersionInFileAndCommit(files, version, branch, commitMessage, author, authorEmail, skipCommit) {
     const versionFiles = JSON.parse(files);
     console.log('parsed files are ', versionFiles);
 
@@ -48,7 +48,7 @@ module.exports = function () {
 
     // commit the files
     if (filesUpdated > 0) {
-      return await commitChanges(branch, commitMessage, author, authorEmail);
+      return await commitChanges(branch, commitMessage, author, authorEmail, skipCommit);
     }
   }
 
@@ -59,14 +59,17 @@ module.exports = function () {
    * @param commitMessage The commit message.
    * @param authorName The author name.
    * @param authorEmail The author email.
+   * @param skipCommit Do not create a release commit.
    */
-  async function commitChanges(branch, commitMessage, authorName, authorEmail) {
+  async function commitChanges(branch, commitMessage, authorName, authorEmail, skipCommit) {
     await actions.exec('git', ['checkout', branch]);
     await actions.exec('git', ['add', '-A']);
     await actions.exec('git', ['config', '--local', 'user.name', authorName]);
     await actions.exec('git', ['config', '--local', 'user.email', authorEmail]);
     await actions.exec('git', ['commit', '--no-verify', '-m', commitMessage]);
-    await actions.exec('git', ['push']);
+    if (!skipCommit) {
+      await actions.exec('git', ['push']);
+    }
   }
 
   function writeToFile(yamlString, filePath) {
