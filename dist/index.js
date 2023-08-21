@@ -170,13 +170,9 @@ function exportVariable(name, val) {
     process.env[name] = convertedVal;
     const filePath = process.env['GITHUB_ENV'] || '';
     if (filePath) {
-        const delimiter = '_GitHubActionsFileCommandDelimeter_';
-        const commandValue = `${name}<<${delimiter}${os.EOL}${convertedVal}${os.EOL}${delimiter}`;
-        file_command_1.issueCommand('ENV', commandValue);
+        return file_command_1.issueFileCommand('ENV', file_command_1.prepareKeyValueMessage(name, val));
     }
-    else {
-        command_1.issueCommand('set-env', { name }, convertedVal);
-    }
+    command_1.issueCommand('set-env', { name }, convertedVal);
 }
 exports.exportVariable = exportVariable;
 /**
@@ -194,7 +190,7 @@ exports.setSecret = setSecret;
 function addPath(inputPath) {
     const filePath = process.env['GITHUB_PATH'] || '';
     if (filePath) {
-        file_command_1.issueCommand('PATH', inputPath);
+        file_command_1.issueFileCommand('PATH', inputPath);
     }
     else {
         command_1.issueCommand('add-path', {}, inputPath);
@@ -234,7 +230,10 @@ function getMultilineInput(name, options) {
     const inputs = getInput(name, options)
         .split('\n')
         .filter(x => x !== '');
-    return inputs;
+    if (options && options.trimWhitespace === false) {
+        return inputs;
+    }
+    return inputs.map(input => input.trim());
 }
 exports.getMultilineInput = getMultilineInput;
 /**
@@ -267,8 +266,12 @@ exports.getBooleanInput = getBooleanInput;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function setOutput(name, value) {
+    const filePath = process.env['GITHUB_OUTPUT'] || '';
+    if (filePath) {
+        return file_command_1.issueFileCommand('OUTPUT', file_command_1.prepareKeyValueMessage(name, value));
+    }
     process.stdout.write(os.EOL);
-    command_1.issueCommand('set-output', { name }, value);
+    command_1.issueCommand('set-output', { name }, utils_1.toCommandValue(value));
 }
 exports.setOutput = setOutput;
 /**
@@ -397,7 +400,11 @@ exports.group = group;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function saveState(name, value) {
-    command_1.issueCommand('save-state', { name }, value);
+    const filePath = process.env['GITHUB_STATE'] || '';
+    if (filePath) {
+        return file_command_1.issueFileCommand('STATE', file_command_1.prepareKeyValueMessage(name, value));
+    }
+    command_1.issueCommand('save-state', { name }, utils_1.toCommandValue(value));
 }
 exports.saveState = saveState;
 /**
@@ -416,6 +423,23 @@ function getIDToken(aud) {
     });
 }
 exports.getIDToken = getIDToken;
+/**
+ * Summary exports
+ */
+var summary_1 = __webpack_require__(1327);
+Object.defineProperty(exports, "summary", ({ enumerable: true, get: function () { return summary_1.summary; } }));
+/**
+ * @deprecated use core.summary
+ */
+var summary_2 = __webpack_require__(1327);
+Object.defineProperty(exports, "markdownSummary", ({ enumerable: true, get: function () { return summary_2.markdownSummary; } }));
+/**
+ * Path exports
+ */
+var path_utils_1 = __webpack_require__(2981);
+Object.defineProperty(exports, "toPosixPath", ({ enumerable: true, get: function () { return path_utils_1.toPosixPath; } }));
+Object.defineProperty(exports, "toWin32Path", ({ enumerable: true, get: function () { return path_utils_1.toWin32Path; } }));
+Object.defineProperty(exports, "toPlatformPath", ({ enumerable: true, get: function () { return path_utils_1.toPlatformPath; } }));
 //# sourceMappingURL=core.js.map
 
 /***/ }),
@@ -446,13 +470,14 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.issueCommand = void 0;
+exports.prepareKeyValueMessage = exports.issueFileCommand = void 0;
 // We use any as a valid input type
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const fs = __importStar(__webpack_require__(5747));
 const os = __importStar(__webpack_require__(2087));
+const uuid_1 = __webpack_require__(9521);
 const utils_1 = __webpack_require__(5278);
-function issueCommand(command, message) {
+function issueFileCommand(command, message) {
     const filePath = process.env[`GITHUB_${command}`];
     if (!filePath) {
         throw new Error(`Unable to find environment variable for file command ${command}`);
@@ -464,7 +489,22 @@ function issueCommand(command, message) {
         encoding: 'utf8'
     });
 }
-exports.issueCommand = issueCommand;
+exports.issueFileCommand = issueFileCommand;
+function prepareKeyValueMessage(key, value) {
+    const delimiter = `ghadelimiter_${uuid_1.v4()}`;
+    const convertedValue = utils_1.toCommandValue(value);
+    // These should realistically never happen, but just in case someone finds a
+    // way to exploit uuid generation let's not allow keys or values that contain
+    // the delimiter.
+    if (key.includes(delimiter)) {
+        throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
+    }
+    if (convertedValue.includes(delimiter)) {
+        throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
+    }
+    return `${key}<<${delimiter}${os.EOL}${convertedValue}${os.EOL}${delimiter}`;
+}
+exports.prepareKeyValueMessage = prepareKeyValueMessage;
 //# sourceMappingURL=file-command.js.map
 
 /***/ }),
@@ -485,8 +525,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.OidcClient = void 0;
-const http_client_1 = __webpack_require__(9925);
-const auth_1 = __webpack_require__(3702);
+const http_client_1 = __webpack_require__(6255);
+const auth_1 = __webpack_require__(5526);
 const core_1 = __webpack_require__(2186);
 class OidcClient {
     static createHttpClient(allowRetry = true, maxRetry = 10) {
@@ -550,6 +590,361 @@ class OidcClient {
 }
 exports.OidcClient = OidcClient;
 //# sourceMappingURL=oidc-utils.js.map
+
+/***/ }),
+
+/***/ 2981:
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.toPlatformPath = exports.toWin32Path = exports.toPosixPath = void 0;
+const path = __importStar(__webpack_require__(5622));
+/**
+ * toPosixPath converts the given path to the posix form. On Windows, \\ will be
+ * replaced with /.
+ *
+ * @param pth. Path to transform.
+ * @return string Posix path.
+ */
+function toPosixPath(pth) {
+    return pth.replace(/[\\]/g, '/');
+}
+exports.toPosixPath = toPosixPath;
+/**
+ * toWin32Path converts the given path to the win32 form. On Linux, / will be
+ * replaced with \\.
+ *
+ * @param pth. Path to transform.
+ * @return string Win32 path.
+ */
+function toWin32Path(pth) {
+    return pth.replace(/[/]/g, '\\');
+}
+exports.toWin32Path = toWin32Path;
+/**
+ * toPlatformPath converts the given path to a platform-specific path. It does
+ * this by replacing instances of / and \ with the platform-specific path
+ * separator.
+ *
+ * @param pth The path to platformize.
+ * @return string The platform-specific path.
+ */
+function toPlatformPath(pth) {
+    return pth.replace(/[/\\]/g, path.sep);
+}
+exports.toPlatformPath = toPlatformPath;
+//# sourceMappingURL=path-utils.js.map
+
+/***/ }),
+
+/***/ 1327:
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.summary = exports.markdownSummary = exports.SUMMARY_DOCS_URL = exports.SUMMARY_ENV_VAR = void 0;
+const os_1 = __webpack_require__(2087);
+const fs_1 = __webpack_require__(5747);
+const { access, appendFile, writeFile } = fs_1.promises;
+exports.SUMMARY_ENV_VAR = 'GITHUB_STEP_SUMMARY';
+exports.SUMMARY_DOCS_URL = 'https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions#adding-a-job-summary';
+class Summary {
+    constructor() {
+        this._buffer = '';
+    }
+    /**
+     * Finds the summary file path from the environment, rejects if env var is not found or file does not exist
+     * Also checks r/w permissions.
+     *
+     * @returns step summary file path
+     */
+    filePath() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this._filePath) {
+                return this._filePath;
+            }
+            const pathFromEnv = process.env[exports.SUMMARY_ENV_VAR];
+            if (!pathFromEnv) {
+                throw new Error(`Unable to find environment variable for $${exports.SUMMARY_ENV_VAR}. Check if your runtime environment supports job summaries.`);
+            }
+            try {
+                yield access(pathFromEnv, fs_1.constants.R_OK | fs_1.constants.W_OK);
+            }
+            catch (_a) {
+                throw new Error(`Unable to access summary file: '${pathFromEnv}'. Check if the file has correct read/write permissions.`);
+            }
+            this._filePath = pathFromEnv;
+            return this._filePath;
+        });
+    }
+    /**
+     * Wraps content in an HTML tag, adding any HTML attributes
+     *
+     * @param {string} tag HTML tag to wrap
+     * @param {string | null} content content within the tag
+     * @param {[attribute: string]: string} attrs key-value list of HTML attributes to add
+     *
+     * @returns {string} content wrapped in HTML element
+     */
+    wrap(tag, content, attrs = {}) {
+        const htmlAttrs = Object.entries(attrs)
+            .map(([key, value]) => ` ${key}="${value}"`)
+            .join('');
+        if (!content) {
+            return `<${tag}${htmlAttrs}>`;
+        }
+        return `<${tag}${htmlAttrs}>${content}</${tag}>`;
+    }
+    /**
+     * Writes text in the buffer to the summary buffer file and empties buffer. Will append by default.
+     *
+     * @param {SummaryWriteOptions} [options] (optional) options for write operation
+     *
+     * @returns {Promise<Summary>} summary instance
+     */
+    write(options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const overwrite = !!(options === null || options === void 0 ? void 0 : options.overwrite);
+            const filePath = yield this.filePath();
+            const writeFunc = overwrite ? writeFile : appendFile;
+            yield writeFunc(filePath, this._buffer, { encoding: 'utf8' });
+            return this.emptyBuffer();
+        });
+    }
+    /**
+     * Clears the summary buffer and wipes the summary file
+     *
+     * @returns {Summary} summary instance
+     */
+    clear() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.emptyBuffer().write({ overwrite: true });
+        });
+    }
+    /**
+     * Returns the current summary buffer as a string
+     *
+     * @returns {string} string of summary buffer
+     */
+    stringify() {
+        return this._buffer;
+    }
+    /**
+     * If the summary buffer is empty
+     *
+     * @returns {boolen} true if the buffer is empty
+     */
+    isEmptyBuffer() {
+        return this._buffer.length === 0;
+    }
+    /**
+     * Resets the summary buffer without writing to summary file
+     *
+     * @returns {Summary} summary instance
+     */
+    emptyBuffer() {
+        this._buffer = '';
+        return this;
+    }
+    /**
+     * Adds raw text to the summary buffer
+     *
+     * @param {string} text content to add
+     * @param {boolean} [addEOL=false] (optional) append an EOL to the raw text (default: false)
+     *
+     * @returns {Summary} summary instance
+     */
+    addRaw(text, addEOL = false) {
+        this._buffer += text;
+        return addEOL ? this.addEOL() : this;
+    }
+    /**
+     * Adds the operating system-specific end-of-line marker to the buffer
+     *
+     * @returns {Summary} summary instance
+     */
+    addEOL() {
+        return this.addRaw(os_1.EOL);
+    }
+    /**
+     * Adds an HTML codeblock to the summary buffer
+     *
+     * @param {string} code content to render within fenced code block
+     * @param {string} lang (optional) language to syntax highlight code
+     *
+     * @returns {Summary} summary instance
+     */
+    addCodeBlock(code, lang) {
+        const attrs = Object.assign({}, (lang && { lang }));
+        const element = this.wrap('pre', this.wrap('code', code), attrs);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML list to the summary buffer
+     *
+     * @param {string[]} items list of items to render
+     * @param {boolean} [ordered=false] (optional) if the rendered list should be ordered or not (default: false)
+     *
+     * @returns {Summary} summary instance
+     */
+    addList(items, ordered = false) {
+        const tag = ordered ? 'ol' : 'ul';
+        const listItems = items.map(item => this.wrap('li', item)).join('');
+        const element = this.wrap(tag, listItems);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML table to the summary buffer
+     *
+     * @param {SummaryTableCell[]} rows table rows
+     *
+     * @returns {Summary} summary instance
+     */
+    addTable(rows) {
+        const tableBody = rows
+            .map(row => {
+            const cells = row
+                .map(cell => {
+                if (typeof cell === 'string') {
+                    return this.wrap('td', cell);
+                }
+                const { header, data, colspan, rowspan } = cell;
+                const tag = header ? 'th' : 'td';
+                const attrs = Object.assign(Object.assign({}, (colspan && { colspan })), (rowspan && { rowspan }));
+                return this.wrap(tag, data, attrs);
+            })
+                .join('');
+            return this.wrap('tr', cells);
+        })
+            .join('');
+        const element = this.wrap('table', tableBody);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds a collapsable HTML details element to the summary buffer
+     *
+     * @param {string} label text for the closed state
+     * @param {string} content collapsable content
+     *
+     * @returns {Summary} summary instance
+     */
+    addDetails(label, content) {
+        const element = this.wrap('details', this.wrap('summary', label) + content);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML image tag to the summary buffer
+     *
+     * @param {string} src path to the image you to embed
+     * @param {string} alt text description of the image
+     * @param {SummaryImageOptions} options (optional) addition image attributes
+     *
+     * @returns {Summary} summary instance
+     */
+    addImage(src, alt, options) {
+        const { width, height } = options || {};
+        const attrs = Object.assign(Object.assign({}, (width && { width })), (height && { height }));
+        const element = this.wrap('img', null, Object.assign({ src, alt }, attrs));
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML section heading element
+     *
+     * @param {string} text heading text
+     * @param {number | string} [level=1] (optional) the heading level, default: 1
+     *
+     * @returns {Summary} summary instance
+     */
+    addHeading(text, level) {
+        const tag = `h${level}`;
+        const allowedTag = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)
+            ? tag
+            : 'h1';
+        const element = this.wrap(allowedTag, text);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML thematic break (<hr>) to the summary buffer
+     *
+     * @returns {Summary} summary instance
+     */
+    addSeparator() {
+        const element = this.wrap('hr', null);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML line break (<br>) to the summary buffer
+     *
+     * @returns {Summary} summary instance
+     */
+    addBreak() {
+        const element = this.wrap('br', null);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML blockquote to the summary buffer
+     *
+     * @param {string} text quote text
+     * @param {string} cite (optional) citation url
+     *
+     * @returns {Summary} summary instance
+     */
+    addQuote(text, cite) {
+        const attrs = Object.assign({}, (cite && { cite }));
+        const element = this.wrap('blockquote', text, attrs);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML anchor tag to the summary buffer
+     *
+     * @param {string} text link text/content
+     * @param {string} href hyperlink
+     *
+     * @returns {Summary} summary instance
+     */
+    addLink(text, href) {
+        const element = this.wrap('a', text, { href });
+        return this.addRaw(element).addEOL();
+    }
+}
+const _summary = new Summary();
+/**
+ * @deprecated use `core.summary`
+ */
+exports.markdownSummary = _summary;
+exports.summary = _summary;
+//# sourceMappingURL=summary.js.map
 
 /***/ }),
 
@@ -1349,6 +1744,7 @@ class Context {
      * Hydrate the context from the environment
      */
     constructor() {
+        var _a, _b, _c;
         this.payload = {};
         if (process.env.GITHUB_EVENT_PATH) {
             if (fs_1.existsSync(process.env.GITHUB_EVENT_PATH)) {
@@ -1368,6 +1764,9 @@ class Context {
         this.job = process.env.GITHUB_JOB;
         this.runNumber = parseInt(process.env.GITHUB_RUN_NUMBER, 10);
         this.runId = parseInt(process.env.GITHUB_RUN_ID, 10);
+        this.apiUrl = (_a = process.env.GITHUB_API_URL) !== null && _a !== void 0 ? _a : `https://api.github.com`;
+        this.serverUrl = (_b = process.env.GITHUB_SERVER_URL) !== null && _b !== void 0 ? _b : `https://github.com`;
+        this.graphqlUrl = (_c = process.env.GITHUB_GRAPHQL_URL) !== null && _c !== void 0 ? _c : `https://api.github.com/graphql`;
     }
     get issue() {
         const payload = this.payload;
@@ -1412,7 +1811,7 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 var __importStar = (this && this.__importStar) || function (mod) {
     if (mod && mod.__esModule) return mod;
     var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
     __setModuleDefault(result, mod);
     return result;
 };
@@ -1427,8 +1826,9 @@ exports.context = new Context.Context();
  * @param     token    the repo PAT or GITHUB_TOKEN
  * @param     options  other options to set
  */
-function getOctokit(token, options) {
-    return new utils_1.GitHub(utils_1.getOctokitOptions(token, options));
+function getOctokit(token, options, ...additionalPlugins) {
+    const GitHubWithPlugins = utils_1.GitHub.plugin(...additionalPlugins);
+    return new GitHubWithPlugins(utils_1.getOctokitOptions(token, options));
 }
 exports.getOctokit = getOctokit;
 //# sourceMappingURL=github.js.map
@@ -1455,13 +1855,13 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 var __importStar = (this && this.__importStar) || function (mod) {
     if (mod && mod.__esModule) return mod;
     var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
     __setModuleDefault(result, mod);
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getApiBaseUrl = exports.getProxyAgent = exports.getAuthString = void 0;
-const httpClient = __importStar(__webpack_require__(9925));
+const httpClient = __importStar(__webpack_require__(6255));
 function getAuthString(token, options) {
     if (!token && !options.auth) {
         throw new Error('Parameter token or opts.auth is required');
@@ -1505,12 +1905,12 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 var __importStar = (this && this.__importStar) || function (mod) {
     if (mod && mod.__esModule) return mod;
     var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
     __setModuleDefault(result, mod);
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getOctokitOptions = exports.GitHub = exports.context = void 0;
+exports.getOctokitOptions = exports.GitHub = exports.defaults = exports.context = void 0;
 const Context = __importStar(__webpack_require__(4087));
 const Utils = __importStar(__webpack_require__(7914));
 // octokit + plugins
@@ -1519,13 +1919,13 @@ const plugin_rest_endpoint_methods_1 = __webpack_require__(3044);
 const plugin_paginate_rest_1 = __webpack_require__(4193);
 exports.context = new Context.Context();
 const baseUrl = Utils.getApiBaseUrl();
-const defaults = {
+exports.defaults = {
     baseUrl,
     request: {
         agent: Utils.getProxyAgent(baseUrl)
     }
 };
-exports.GitHub = core_1.Octokit.plugin(plugin_rest_endpoint_methods_1.restEndpointMethods, plugin_paginate_rest_1.paginateRest).defaults(defaults);
+exports.GitHub = core_1.Octokit.plugin(plugin_rest_endpoint_methods_1.restEndpointMethods, plugin_paginate_rest_1.paginateRest).defaults(exports.defaults);
 /**
  * Convience function to correctly format Octokit Options to pass into the constructor.
  *
@@ -1546,28 +1946,41 @@ exports.getOctokitOptions = getOctokitOptions;
 
 /***/ }),
 
-/***/ 3702:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ 5526:
+/***/ (function(__unused_webpack_module, exports) {
 
 "use strict";
 
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.PersonalAccessTokenCredentialHandler = exports.BearerCredentialHandler = exports.BasicCredentialHandler = void 0;
 class BasicCredentialHandler {
     constructor(username, password) {
         this.username = username;
         this.password = password;
     }
     prepareRequest(options) {
-        options.headers['Authorization'] =
-            'Basic ' +
-                Buffer.from(this.username + ':' + this.password).toString('base64');
+        if (!options.headers) {
+            throw Error('The request has no headers');
+        }
+        options.headers['Authorization'] = `Basic ${Buffer.from(`${this.username}:${this.password}`).toString('base64')}`;
     }
     // This handler cannot handle 401
-    canHandleAuthentication(response) {
+    canHandleAuthentication() {
         return false;
     }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
+    handleAuthentication() {
+        return __awaiter(this, void 0, void 0, function* () {
+            throw new Error('not implemented');
+        });
     }
 }
 exports.BasicCredentialHandler = BasicCredentialHandler;
@@ -1578,14 +1991,19 @@ class BearerCredentialHandler {
     // currently implements pre-authorization
     // TODO: support preAuth = false where it hooks on 401
     prepareRequest(options) {
-        options.headers['Authorization'] = 'Bearer ' + this.token;
+        if (!options.headers) {
+            throw Error('The request has no headers');
+        }
+        options.headers['Authorization'] = `Bearer ${this.token}`;
     }
     // This handler cannot handle 401
-    canHandleAuthentication(response) {
+    canHandleAuthentication() {
         return false;
     }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
+    handleAuthentication() {
+        return __awaiter(this, void 0, void 0, function* () {
+            throw new Error('not implemented');
+        });
     }
 }
 exports.BearerCredentialHandler = BearerCredentialHandler;
@@ -1596,32 +2014,66 @@ class PersonalAccessTokenCredentialHandler {
     // currently implements pre-authorization
     // TODO: support preAuth = false where it hooks on 401
     prepareRequest(options) {
-        options.headers['Authorization'] =
-            'Basic ' + Buffer.from('PAT:' + this.token).toString('base64');
+        if (!options.headers) {
+            throw Error('The request has no headers');
+        }
+        options.headers['Authorization'] = `Basic ${Buffer.from(`PAT:${this.token}`).toString('base64')}`;
     }
     // This handler cannot handle 401
-    canHandleAuthentication(response) {
+    canHandleAuthentication() {
         return false;
     }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
+    handleAuthentication() {
+        return __awaiter(this, void 0, void 0, function* () {
+            throw new Error('not implemented');
+        });
     }
 }
 exports.PersonalAccessTokenCredentialHandler = PersonalAccessTokenCredentialHandler;
-
+//# sourceMappingURL=auth.js.map
 
 /***/ }),
 
-/***/ 9925:
-/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+/***/ 6255:
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
 
 "use strict";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const http = __webpack_require__(8605);
-const https = __webpack_require__(7211);
-const pm = __webpack_require__(6443);
-let tunnel;
+exports.HttpClient = exports.isHttps = exports.HttpClientResponse = exports.HttpClientError = exports.getProxyUrl = exports.MediaTypes = exports.Headers = exports.HttpCodes = void 0;
+const http = __importStar(__webpack_require__(8605));
+const https = __importStar(__webpack_require__(7211));
+const pm = __importStar(__webpack_require__(9835));
+const tunnel = __importStar(__webpack_require__(4294));
 var HttpCodes;
 (function (HttpCodes) {
     HttpCodes[HttpCodes["OK"] = 200] = "OK";
@@ -1666,7 +2118,7 @@ var MediaTypes;
  * @param serverUrl  The server URL where the request will be sent. For example, https://api.github.com
  */
 function getProxyUrl(serverUrl) {
-    let proxyUrl = pm.getProxyUrl(new URL(serverUrl));
+    const proxyUrl = pm.getProxyUrl(new URL(serverUrl));
     return proxyUrl ? proxyUrl.href : '';
 }
 exports.getProxyUrl = getProxyUrl;
@@ -1699,20 +2151,35 @@ class HttpClientResponse {
         this.message = message;
     }
     readBody() {
-        return new Promise(async (resolve, reject) => {
-            let output = Buffer.alloc(0);
-            this.message.on('data', (chunk) => {
-                output = Buffer.concat([output, chunk]);
-            });
-            this.message.on('end', () => {
-                resolve(output.toString());
-            });
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve) => __awaiter(this, void 0, void 0, function* () {
+                let output = Buffer.alloc(0);
+                this.message.on('data', (chunk) => {
+                    output = Buffer.concat([output, chunk]);
+                });
+                this.message.on('end', () => {
+                    resolve(output.toString());
+                });
+            }));
+        });
+    }
+    readBodyBuffer() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve) => __awaiter(this, void 0, void 0, function* () {
+                const chunks = [];
+                this.message.on('data', (chunk) => {
+                    chunks.push(chunk);
+                });
+                this.message.on('end', () => {
+                    resolve(Buffer.concat(chunks));
+                });
+            }));
         });
     }
 }
 exports.HttpClientResponse = HttpClientResponse;
 function isHttps(requestUrl) {
-    let parsedUrl = new URL(requestUrl);
+    const parsedUrl = new URL(requestUrl);
     return parsedUrl.protocol === 'https:';
 }
 exports.isHttps = isHttps;
@@ -1755,141 +2222,169 @@ class HttpClient {
         }
     }
     options(requestUrl, additionalHeaders) {
-        return this.request('OPTIONS', requestUrl, null, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('OPTIONS', requestUrl, null, additionalHeaders || {});
+        });
     }
     get(requestUrl, additionalHeaders) {
-        return this.request('GET', requestUrl, null, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('GET', requestUrl, null, additionalHeaders || {});
+        });
     }
     del(requestUrl, additionalHeaders) {
-        return this.request('DELETE', requestUrl, null, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('DELETE', requestUrl, null, additionalHeaders || {});
+        });
     }
     post(requestUrl, data, additionalHeaders) {
-        return this.request('POST', requestUrl, data, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('POST', requestUrl, data, additionalHeaders || {});
+        });
     }
     patch(requestUrl, data, additionalHeaders) {
-        return this.request('PATCH', requestUrl, data, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('PATCH', requestUrl, data, additionalHeaders || {});
+        });
     }
     put(requestUrl, data, additionalHeaders) {
-        return this.request('PUT', requestUrl, data, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('PUT', requestUrl, data, additionalHeaders || {});
+        });
     }
     head(requestUrl, additionalHeaders) {
-        return this.request('HEAD', requestUrl, null, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('HEAD', requestUrl, null, additionalHeaders || {});
+        });
     }
     sendStream(verb, requestUrl, stream, additionalHeaders) {
-        return this.request(verb, requestUrl, stream, additionalHeaders);
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request(verb, requestUrl, stream, additionalHeaders);
+        });
     }
     /**
      * Gets a typed object from an endpoint
      * Be aware that not found returns a null.  Other errors (4xx, 5xx) reject the promise
      */
-    async getJson(requestUrl, additionalHeaders = {}) {
-        additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
-        let res = await this.get(requestUrl, additionalHeaders);
-        return this._processResponse(res, this.requestOptions);
+    getJson(requestUrl, additionalHeaders = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
+            const res = yield this.get(requestUrl, additionalHeaders);
+            return this._processResponse(res, this.requestOptions);
+        });
     }
-    async postJson(requestUrl, obj, additionalHeaders = {}) {
-        let data = JSON.stringify(obj, null, 2);
-        additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
-        additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
-        let res = await this.post(requestUrl, data, additionalHeaders);
-        return this._processResponse(res, this.requestOptions);
+    postJson(requestUrl, obj, additionalHeaders = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const data = JSON.stringify(obj, null, 2);
+            additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
+            additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
+            const res = yield this.post(requestUrl, data, additionalHeaders);
+            return this._processResponse(res, this.requestOptions);
+        });
     }
-    async putJson(requestUrl, obj, additionalHeaders = {}) {
-        let data = JSON.stringify(obj, null, 2);
-        additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
-        additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
-        let res = await this.put(requestUrl, data, additionalHeaders);
-        return this._processResponse(res, this.requestOptions);
+    putJson(requestUrl, obj, additionalHeaders = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const data = JSON.stringify(obj, null, 2);
+            additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
+            additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
+            const res = yield this.put(requestUrl, data, additionalHeaders);
+            return this._processResponse(res, this.requestOptions);
+        });
     }
-    async patchJson(requestUrl, obj, additionalHeaders = {}) {
-        let data = JSON.stringify(obj, null, 2);
-        additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
-        additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
-        let res = await this.patch(requestUrl, data, additionalHeaders);
-        return this._processResponse(res, this.requestOptions);
+    patchJson(requestUrl, obj, additionalHeaders = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const data = JSON.stringify(obj, null, 2);
+            additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
+            additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
+            const res = yield this.patch(requestUrl, data, additionalHeaders);
+            return this._processResponse(res, this.requestOptions);
+        });
     }
     /**
      * Makes a raw http request.
      * All other methods such as get, post, patch, and request ultimately call this.
      * Prefer get, del, post and patch
      */
-    async request(verb, requestUrl, data, headers) {
-        if (this._disposed) {
-            throw new Error('Client has already been disposed.');
-        }
-        let parsedUrl = new URL(requestUrl);
-        let info = this._prepareRequest(verb, parsedUrl, headers);
-        // Only perform retries on reads since writes may not be idempotent.
-        let maxTries = this._allowRetries && RetryableHttpVerbs.indexOf(verb) != -1
-            ? this._maxRetries + 1
-            : 1;
-        let numTries = 0;
-        let response;
-        while (numTries < maxTries) {
-            response = await this.requestRaw(info, data);
-            // Check if it's an authentication challenge
-            if (response &&
-                response.message &&
-                response.message.statusCode === HttpCodes.Unauthorized) {
-                let authenticationHandler;
-                for (let i = 0; i < this.handlers.length; i++) {
-                    if (this.handlers[i].canHandleAuthentication(response)) {
-                        authenticationHandler = this.handlers[i];
-                        break;
-                    }
-                }
-                if (authenticationHandler) {
-                    return authenticationHandler.handleAuthentication(this, info, data);
-                }
-                else {
-                    // We have received an unauthorized response but have no handlers to handle it.
-                    // Let the response return to the caller.
-                    return response;
-                }
+    request(verb, requestUrl, data, headers) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this._disposed) {
+                throw new Error('Client has already been disposed.');
             }
-            let redirectsRemaining = this._maxRedirects;
-            while (HttpRedirectCodes.indexOf(response.message.statusCode) != -1 &&
-                this._allowRedirects &&
-                redirectsRemaining > 0) {
-                const redirectUrl = response.message.headers['location'];
-                if (!redirectUrl) {
-                    // if there's no location to redirect to, we won't
-                    break;
-                }
-                let parsedRedirectUrl = new URL(redirectUrl);
-                if (parsedUrl.protocol == 'https:' &&
-                    parsedUrl.protocol != parsedRedirectUrl.protocol &&
-                    !this._allowRedirectDowngrade) {
-                    throw new Error('Redirect from HTTPS to HTTP protocol. This downgrade is not allowed for security reasons. If you want to allow this behavior, set the allowRedirectDowngrade option to true.');
-                }
-                // we need to finish reading the response before reassigning response
-                // which will leak the open socket.
-                await response.readBody();
-                // strip authorization header if redirected to a different hostname
-                if (parsedRedirectUrl.hostname !== parsedUrl.hostname) {
-                    for (let header in headers) {
-                        // header names are case insensitive
-                        if (header.toLowerCase() === 'authorization') {
-                            delete headers[header];
+            const parsedUrl = new URL(requestUrl);
+            let info = this._prepareRequest(verb, parsedUrl, headers);
+            // Only perform retries on reads since writes may not be idempotent.
+            const maxTries = this._allowRetries && RetryableHttpVerbs.includes(verb)
+                ? this._maxRetries + 1
+                : 1;
+            let numTries = 0;
+            let response;
+            do {
+                response = yield this.requestRaw(info, data);
+                // Check if it's an authentication challenge
+                if (response &&
+                    response.message &&
+                    response.message.statusCode === HttpCodes.Unauthorized) {
+                    let authenticationHandler;
+                    for (const handler of this.handlers) {
+                        if (handler.canHandleAuthentication(response)) {
+                            authenticationHandler = handler;
+                            break;
                         }
                     }
+                    if (authenticationHandler) {
+                        return authenticationHandler.handleAuthentication(this, info, data);
+                    }
+                    else {
+                        // We have received an unauthorized response but have no handlers to handle it.
+                        // Let the response return to the caller.
+                        return response;
+                    }
                 }
-                // let's make the request with the new redirectUrl
-                info = this._prepareRequest(verb, parsedRedirectUrl, headers);
-                response = await this.requestRaw(info, data);
-                redirectsRemaining--;
-            }
-            if (HttpResponseRetryCodes.indexOf(response.message.statusCode) == -1) {
-                // If not a retry code, return immediately instead of retrying
-                return response;
-            }
-            numTries += 1;
-            if (numTries < maxTries) {
-                await response.readBody();
-                await this._performExponentialBackoff(numTries);
-            }
-        }
-        return response;
+                let redirectsRemaining = this._maxRedirects;
+                while (response.message.statusCode &&
+                    HttpRedirectCodes.includes(response.message.statusCode) &&
+                    this._allowRedirects &&
+                    redirectsRemaining > 0) {
+                    const redirectUrl = response.message.headers['location'];
+                    if (!redirectUrl) {
+                        // if there's no location to redirect to, we won't
+                        break;
+                    }
+                    const parsedRedirectUrl = new URL(redirectUrl);
+                    if (parsedUrl.protocol === 'https:' &&
+                        parsedUrl.protocol !== parsedRedirectUrl.protocol &&
+                        !this._allowRedirectDowngrade) {
+                        throw new Error('Redirect from HTTPS to HTTP protocol. This downgrade is not allowed for security reasons. If you want to allow this behavior, set the allowRedirectDowngrade option to true.');
+                    }
+                    // we need to finish reading the response before reassigning response
+                    // which will leak the open socket.
+                    yield response.readBody();
+                    // strip authorization header if redirected to a different hostname
+                    if (parsedRedirectUrl.hostname !== parsedUrl.hostname) {
+                        for (const header in headers) {
+                            // header names are case insensitive
+                            if (header.toLowerCase() === 'authorization') {
+                                delete headers[header];
+                            }
+                        }
+                    }
+                    // let's make the request with the new redirectUrl
+                    info = this._prepareRequest(verb, parsedRedirectUrl, headers);
+                    response = yield this.requestRaw(info, data);
+                    redirectsRemaining--;
+                }
+                if (!response.message.statusCode ||
+                    !HttpResponseRetryCodes.includes(response.message.statusCode)) {
+                    // If not a retry code, return immediately instead of retrying
+                    return response;
+                }
+                numTries += 1;
+                if (numTries < maxTries) {
+                    yield response.readBody();
+                    yield this._performExponentialBackoff(numTries);
+                }
+            } while (numTries < maxTries);
+            return response;
+        });
     }
     /**
      * Needs to be called if keepAlive is set to true in request options.
@@ -1906,14 +2401,22 @@ class HttpClient {
      * @param data
      */
     requestRaw(info, data) {
-        return new Promise((resolve, reject) => {
-            let callbackForResult = function (err, res) {
-                if (err) {
-                    reject(err);
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => {
+                function callbackForResult(err, res) {
+                    if (err) {
+                        reject(err);
+                    }
+                    else if (!res) {
+                        // If `err` is not passed, then `res` must be passed.
+                        reject(new Error('Unknown error'));
+                    }
+                    else {
+                        resolve(res);
+                    }
                 }
-                resolve(res);
-            };
-            this.requestRawWithCallback(info, data, callbackForResult);
+                this.requestRawWithCallback(info, data, callbackForResult);
+            });
         });
     }
     /**
@@ -1923,21 +2426,24 @@ class HttpClient {
      * @param onResult
      */
     requestRawWithCallback(info, data, onResult) {
-        let socket;
         if (typeof data === 'string') {
+            if (!info.options.headers) {
+                info.options.headers = {};
+            }
             info.options.headers['Content-Length'] = Buffer.byteLength(data, 'utf8');
         }
         let callbackCalled = false;
-        let handleResult = (err, res) => {
+        function handleResult(err, res) {
             if (!callbackCalled) {
                 callbackCalled = true;
                 onResult(err, res);
             }
-        };
-        let req = info.httpModule.request(info.options, (msg) => {
-            let res = new HttpClientResponse(msg);
-            handleResult(null, res);
+        }
+        const req = info.httpModule.request(info.options, (msg) => {
+            const res = new HttpClientResponse(msg);
+            handleResult(undefined, res);
         });
+        let socket;
         req.on('socket', sock => {
             socket = sock;
         });
@@ -1946,12 +2452,12 @@ class HttpClient {
             if (socket) {
                 socket.end();
             }
-            handleResult(new Error('Request timeout: ' + info.options.path), null);
+            handleResult(new Error(`Request timeout: ${info.options.path}`));
         });
         req.on('error', function (err) {
             // err has statusCode property
             // res should have headers
-            handleResult(err, null);
+            handleResult(err);
         });
         if (data && typeof data === 'string') {
             req.write(data, 'utf8');
@@ -1972,7 +2478,7 @@ class HttpClient {
      * @param serverUrl  The server URL where the request will be sent. For example, https://api.github.com
      */
     getAgent(serverUrl) {
-        let parsedUrl = new URL(serverUrl);
+        const parsedUrl = new URL(serverUrl);
         return this._getAgent(parsedUrl);
     }
     _prepareRequest(method, requestUrl, headers) {
@@ -1996,21 +2502,19 @@ class HttpClient {
         info.options.agent = this._getAgent(info.parsedUrl);
         // gives handlers an opportunity to participate
         if (this.handlers) {
-            this.handlers.forEach(handler => {
+            for (const handler of this.handlers) {
                 handler.prepareRequest(info.options);
-            });
+            }
         }
         return info;
     }
     _mergeHeaders(headers) {
-        const lowercaseKeys = obj => Object.keys(obj).reduce((c, k) => ((c[k.toLowerCase()] = obj[k]), c), {});
         if (this.requestOptions && this.requestOptions.headers) {
-            return Object.assign({}, lowercaseKeys(this.requestOptions.headers), lowercaseKeys(headers));
+            return Object.assign({}, lowercaseKeys(this.requestOptions.headers), lowercaseKeys(headers || {}));
         }
         return lowercaseKeys(headers || {});
     }
     _getExistingOrDefaultHeader(additionalHeaders, header, _default) {
-        const lowercaseKeys = obj => Object.keys(obj).reduce((c, k) => ((c[k.toLowerCase()] = obj[k]), c), {});
         let clientHeader;
         if (this.requestOptions && this.requestOptions.headers) {
             clientHeader = lowercaseKeys(this.requestOptions.headers)[header];
@@ -2019,8 +2523,8 @@ class HttpClient {
     }
     _getAgent(parsedUrl) {
         let agent;
-        let proxyUrl = pm.getProxyUrl(parsedUrl);
-        let useProxy = proxyUrl && proxyUrl.hostname;
+        const proxyUrl = pm.getProxyUrl(parsedUrl);
+        const useProxy = proxyUrl && proxyUrl.hostname;
         if (this._keepAlive && useProxy) {
             agent = this._proxyAgent;
         }
@@ -2028,29 +2532,22 @@ class HttpClient {
             agent = this._agent;
         }
         // if agent is already assigned use that agent.
-        if (!!agent) {
+        if (agent) {
             return agent;
         }
         const usingSsl = parsedUrl.protocol === 'https:';
         let maxSockets = 100;
-        if (!!this.requestOptions) {
+        if (this.requestOptions) {
             maxSockets = this.requestOptions.maxSockets || http.globalAgent.maxSockets;
         }
-        if (useProxy) {
-            // If using proxy, need tunnel
-            if (!tunnel) {
-                tunnel = __webpack_require__(4294);
-            }
+        // This is `useProxy` again, but we need to check `proxyURl` directly for TypeScripts's flow analysis.
+        if (proxyUrl && proxyUrl.hostname) {
             const agentOptions = {
-                maxSockets: maxSockets,
+                maxSockets,
                 keepAlive: this._keepAlive,
-                proxy: {
-                    ...((proxyUrl.username || proxyUrl.password) && {
-                        proxyAuth: `${proxyUrl.username}:${proxyUrl.password}`
-                    }),
-                    host: proxyUrl.hostname,
-                    port: proxyUrl.port
-                }
+                proxy: Object.assign(Object.assign({}, ((proxyUrl.username || proxyUrl.password) && {
+                    proxyAuth: `${proxyUrl.username}:${proxyUrl.password}`
+                })), { host: proxyUrl.hostname, port: proxyUrl.port })
             };
             let tunnelAgent;
             const overHttps = proxyUrl.protocol === 'https:';
@@ -2065,7 +2562,7 @@ class HttpClient {
         }
         // if reusing agent across request and tunneling agent isn't assigned create a new agent
         if (this._keepAlive && !agent) {
-            const options = { keepAlive: this._keepAlive, maxSockets: maxSockets };
+            const options = { keepAlive: this._keepAlive, maxSockets };
             agent = usingSsl ? new https.Agent(options) : new http.Agent(options);
             this._agent = agent;
         }
@@ -2084,109 +2581,127 @@ class HttpClient {
         return agent;
     }
     _performExponentialBackoff(retryNumber) {
-        retryNumber = Math.min(ExponentialBackoffCeiling, retryNumber);
-        const ms = ExponentialBackoffTimeSlice * Math.pow(2, retryNumber);
-        return new Promise(resolve => setTimeout(() => resolve(), ms));
+        return __awaiter(this, void 0, void 0, function* () {
+            retryNumber = Math.min(ExponentialBackoffCeiling, retryNumber);
+            const ms = ExponentialBackoffTimeSlice * Math.pow(2, retryNumber);
+            return new Promise(resolve => setTimeout(() => resolve(), ms));
+        });
     }
-    static dateTimeDeserializer(key, value) {
-        if (typeof value === 'string') {
-            let a = new Date(value);
-            if (!isNaN(a.valueOf())) {
-                return a;
-            }
-        }
-        return value;
-    }
-    async _processResponse(res, options) {
-        return new Promise(async (resolve, reject) => {
-            const statusCode = res.message.statusCode;
-            const response = {
-                statusCode: statusCode,
-                result: null,
-                headers: {}
-            };
-            // not found leads to null obj returned
-            if (statusCode == HttpCodes.NotFound) {
-                resolve(response);
-            }
-            let obj;
-            let contents;
-            // get the result from the body
-            try {
-                contents = await res.readBody();
-                if (contents && contents.length > 0) {
-                    if (options && options.deserializeDates) {
-                        obj = JSON.parse(contents, HttpClient.dateTimeDeserializer);
+    _processResponse(res, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => __awaiter(this, void 0, void 0, function* () {
+                const statusCode = res.message.statusCode || 0;
+                const response = {
+                    statusCode,
+                    result: null,
+                    headers: {}
+                };
+                // not found leads to null obj returned
+                if (statusCode === HttpCodes.NotFound) {
+                    resolve(response);
+                }
+                // get the result from the body
+                function dateTimeDeserializer(key, value) {
+                    if (typeof value === 'string') {
+                        const a = new Date(value);
+                        if (!isNaN(a.valueOf())) {
+                            return a;
+                        }
+                    }
+                    return value;
+                }
+                let obj;
+                let contents;
+                try {
+                    contents = yield res.readBody();
+                    if (contents && contents.length > 0) {
+                        if (options && options.deserializeDates) {
+                            obj = JSON.parse(contents, dateTimeDeserializer);
+                        }
+                        else {
+                            obj = JSON.parse(contents);
+                        }
+                        response.result = obj;
+                    }
+                    response.headers = res.message.headers;
+                }
+                catch (err) {
+                    // Invalid resource (contents not json);  leaving result obj null
+                }
+                // note that 3xx redirects are handled by the http layer.
+                if (statusCode > 299) {
+                    let msg;
+                    // if exception/error in body, attempt to get better error
+                    if (obj && obj.message) {
+                        msg = obj.message;
+                    }
+                    else if (contents && contents.length > 0) {
+                        // it may be the case that the exception is in the body message as string
+                        msg = contents;
                     }
                     else {
-                        obj = JSON.parse(contents);
+                        msg = `Failed request: (${statusCode})`;
                     }
-                    response.result = obj;
-                }
-                response.headers = res.message.headers;
-            }
-            catch (err) {
-                // Invalid resource (contents not json);  leaving result obj null
-            }
-            // note that 3xx redirects are handled by the http layer.
-            if (statusCode > 299) {
-                let msg;
-                // if exception/error in body, attempt to get better error
-                if (obj && obj.message) {
-                    msg = obj.message;
-                }
-                else if (contents && contents.length > 0) {
-                    // it may be the case that the exception is in the body message as string
-                    msg = contents;
+                    const err = new HttpClientError(msg, statusCode);
+                    err.result = response.result;
+                    reject(err);
                 }
                 else {
-                    msg = 'Failed request: (' + statusCode + ')';
+                    resolve(response);
                 }
-                let err = new HttpClientError(msg, statusCode);
-                err.result = response.result;
-                reject(err);
-            }
-            else {
-                resolve(response);
-            }
+            }));
         });
     }
 }
 exports.HttpClient = HttpClient;
-
+const lowercaseKeys = (obj) => Object.keys(obj).reduce((c, k) => ((c[k.toLowerCase()] = obj[k]), c), {});
+//# sourceMappingURL=index.js.map
 
 /***/ }),
 
-/***/ 6443:
+/***/ 9835:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.checkBypass = exports.getProxyUrl = void 0;
 function getProxyUrl(reqUrl) {
-    let usingSsl = reqUrl.protocol === 'https:';
-    let proxyUrl;
+    const usingSsl = reqUrl.protocol === 'https:';
     if (checkBypass(reqUrl)) {
-        return proxyUrl;
+        return undefined;
     }
-    let proxyVar;
-    if (usingSsl) {
-        proxyVar = process.env['https_proxy'] || process.env['HTTPS_PROXY'];
+    const proxyVar = (() => {
+        if (usingSsl) {
+            return process.env['https_proxy'] || process.env['HTTPS_PROXY'];
+        }
+        else {
+            return process.env['http_proxy'] || process.env['HTTP_PROXY'];
+        }
+    })();
+    if (proxyVar) {
+        try {
+            return new URL(proxyVar);
+        }
+        catch (_a) {
+            if (!proxyVar.startsWith('http://') && !proxyVar.startsWith('https://'))
+                return new URL(`http://${proxyVar}`);
+        }
     }
     else {
-        proxyVar = process.env['http_proxy'] || process.env['HTTP_PROXY'];
+        return undefined;
     }
-    if (proxyVar) {
-        proxyUrl = new URL(proxyVar);
-    }
-    return proxyUrl;
 }
 exports.getProxyUrl = getProxyUrl;
 function checkBypass(reqUrl) {
     if (!reqUrl.hostname) {
         return false;
     }
-    let noProxy = process.env['no_proxy'] || process.env['NO_PROXY'] || '';
+    const reqHost = reqUrl.hostname;
+    if (isLoopbackAddress(reqHost)) {
+        return true;
+    }
+    const noProxy = process.env['no_proxy'] || process.env['NO_PROXY'] || '';
     if (!noProxy) {
         return false;
     }
@@ -2202,23 +2717,34 @@ function checkBypass(reqUrl) {
         reqPort = 443;
     }
     // Format the request hostname and hostname with port
-    let upperReqHosts = [reqUrl.hostname.toUpperCase()];
+    const upperReqHosts = [reqUrl.hostname.toUpperCase()];
     if (typeof reqPort === 'number') {
         upperReqHosts.push(`${upperReqHosts[0]}:${reqPort}`);
     }
     // Compare request host against noproxy
-    for (let upperNoProxyItem of noProxy
+    for (const upperNoProxyItem of noProxy
         .split(',')
         .map(x => x.trim().toUpperCase())
         .filter(x => x)) {
-        if (upperReqHosts.some(x => x === upperNoProxyItem)) {
+        if (upperNoProxyItem === '*' ||
+            upperReqHosts.some(x => x === upperNoProxyItem ||
+                x.endsWith(`.${upperNoProxyItem}`) ||
+                (upperNoProxyItem.startsWith('.') &&
+                    x.endsWith(`${upperNoProxyItem}`)))) {
             return true;
         }
     }
     return false;
 }
 exports.checkBypass = checkBypass;
-
+function isLoopbackAddress(host) {
+    const hostLower = host.toLowerCase();
+    return (hostLower === 'localhost' ||
+        hostLower.startsWith('127.') ||
+        hostLower.startsWith('[::1]') ||
+        hostLower.startsWith('[0:0:0:0:0:0:0:1]'));
+}
+//# sourceMappingURL=proxy.js.map
 
 /***/ }),
 
@@ -2867,7 +3393,7 @@ function _objectWithoutProperties(source, excluded) {
   return target;
 }
 
-const VERSION = "3.5.1";
+const VERSION = "3.6.0";
 
 const _excluded = ["authStrategy"];
 class Octokit {
@@ -3533,21 +4059,16 @@ exports.withCustomRequest = withCustomRequest;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 
-const VERSION = "2.16.5";
+const VERSION = "2.21.3";
 
 function ownKeys(object, enumerableOnly) {
   var keys = Object.keys(object);
 
   if (Object.getOwnPropertySymbols) {
     var symbols = Object.getOwnPropertySymbols(object);
-
-    if (enumerableOnly) {
-      symbols = symbols.filter(function (sym) {
-        return Object.getOwnPropertyDescriptor(object, sym).enumerable;
-      });
-    }
-
-    keys.push.apply(keys, symbols);
+    enumerableOnly && (symbols = symbols.filter(function (sym) {
+      return Object.getOwnPropertyDescriptor(object, sym).enumerable;
+    })), keys.push.apply(keys, symbols);
   }
 
   return keys;
@@ -3555,19 +4076,12 @@ function ownKeys(object, enumerableOnly) {
 
 function _objectSpread2(target) {
   for (var i = 1; i < arguments.length; i++) {
-    var source = arguments[i] != null ? arguments[i] : {};
-
-    if (i % 2) {
-      ownKeys(Object(source), true).forEach(function (key) {
-        _defineProperty(target, key, source[key]);
-      });
-    } else if (Object.getOwnPropertyDescriptors) {
-      Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));
-    } else {
-      ownKeys(Object(source)).forEach(function (key) {
-        Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));
-      });
-    }
+    var source = null != arguments[i] ? arguments[i] : {};
+    i % 2 ? ownKeys(Object(source), !0).forEach(function (key) {
+      _defineProperty(target, key, source[key]);
+    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(target, Object.getOwnPropertyDescriptors(source)) : ownKeys(Object(source)).forEach(function (key) {
+      Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));
+    });
   }
 
   return target;
@@ -3717,7 +4231,7 @@ const composePaginateRest = Object.assign(paginate, {
   iterator
 });
 
-const paginatingEndpoints = ["GET /app/hook/deliveries", "GET /app/installations", "GET /applications/grants", "GET /authorizations", "GET /enterprises/{enterprise}/actions/permissions/organizations", "GET /enterprises/{enterprise}/actions/runner-groups", "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations", "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners", "GET /enterprises/{enterprise}/actions/runners", "GET /enterprises/{enterprise}/actions/runners/downloads", "GET /events", "GET /gists", "GET /gists/public", "GET /gists/starred", "GET /gists/{gist_id}/comments", "GET /gists/{gist_id}/commits", "GET /gists/{gist_id}/forks", "GET /installation/repositories", "GET /issues", "GET /marketplace_listing/plans", "GET /marketplace_listing/plans/{plan_id}/accounts", "GET /marketplace_listing/stubbed/plans", "GET /marketplace_listing/stubbed/plans/{plan_id}/accounts", "GET /networks/{owner}/{repo}/events", "GET /notifications", "GET /organizations", "GET /orgs/{org}/actions/permissions/repositories", "GET /orgs/{org}/actions/runner-groups", "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/repositories", "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/runners", "GET /orgs/{org}/actions/runners", "GET /orgs/{org}/actions/runners/downloads", "GET /orgs/{org}/actions/secrets", "GET /orgs/{org}/actions/secrets/{secret_name}/repositories", "GET /orgs/{org}/blocks", "GET /orgs/{org}/credential-authorizations", "GET /orgs/{org}/events", "GET /orgs/{org}/failed_invitations", "GET /orgs/{org}/hooks", "GET /orgs/{org}/hooks/{hook_id}/deliveries", "GET /orgs/{org}/installations", "GET /orgs/{org}/invitations", "GET /orgs/{org}/invitations/{invitation_id}/teams", "GET /orgs/{org}/issues", "GET /orgs/{org}/members", "GET /orgs/{org}/migrations", "GET /orgs/{org}/migrations/{migration_id}/repositories", "GET /orgs/{org}/outside_collaborators", "GET /orgs/{org}/packages", "GET /orgs/{org}/projects", "GET /orgs/{org}/public_members", "GET /orgs/{org}/repos", "GET /orgs/{org}/secret-scanning/alerts", "GET /orgs/{org}/team-sync/groups", "GET /orgs/{org}/teams", "GET /orgs/{org}/teams/{team_slug}/discussions", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions", "GET /orgs/{org}/teams/{team_slug}/invitations", "GET /orgs/{org}/teams/{team_slug}/members", "GET /orgs/{org}/teams/{team_slug}/projects", "GET /orgs/{org}/teams/{team_slug}/repos", "GET /orgs/{org}/teams/{team_slug}/team-sync/group-mappings", "GET /orgs/{org}/teams/{team_slug}/teams", "GET /projects/columns/{column_id}/cards", "GET /projects/{project_id}/collaborators", "GET /projects/{project_id}/columns", "GET /repos/{owner}/{repo}/actions/artifacts", "GET /repos/{owner}/{repo}/actions/runners", "GET /repos/{owner}/{repo}/actions/runners/downloads", "GET /repos/{owner}/{repo}/actions/runs", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs", "GET /repos/{owner}/{repo}/actions/secrets", "GET /repos/{owner}/{repo}/actions/workflows", "GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs", "GET /repos/{owner}/{repo}/assignees", "GET /repos/{owner}/{repo}/autolinks", "GET /repos/{owner}/{repo}/branches", "GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations", "GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs", "GET /repos/{owner}/{repo}/code-scanning/alerts", "GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances", "GET /repos/{owner}/{repo}/code-scanning/analyses", "GET /repos/{owner}/{repo}/collaborators", "GET /repos/{owner}/{repo}/comments", "GET /repos/{owner}/{repo}/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/commits", "GET /repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head", "GET /repos/{owner}/{repo}/commits/{commit_sha}/comments", "GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls", "GET /repos/{owner}/{repo}/commits/{ref}/check-runs", "GET /repos/{owner}/{repo}/commits/{ref}/check-suites", "GET /repos/{owner}/{repo}/commits/{ref}/statuses", "GET /repos/{owner}/{repo}/contributors", "GET /repos/{owner}/{repo}/deployments", "GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses", "GET /repos/{owner}/{repo}/events", "GET /repos/{owner}/{repo}/forks", "GET /repos/{owner}/{repo}/git/matching-refs/{ref}", "GET /repos/{owner}/{repo}/hooks", "GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries", "GET /repos/{owner}/{repo}/invitations", "GET /repos/{owner}/{repo}/issues", "GET /repos/{owner}/{repo}/issues/comments", "GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/issues/events", "GET /repos/{owner}/{repo}/issues/{issue_number}/comments", "GET /repos/{owner}/{repo}/issues/{issue_number}/events", "GET /repos/{owner}/{repo}/issues/{issue_number}/labels", "GET /repos/{owner}/{repo}/issues/{issue_number}/reactions", "GET /repos/{owner}/{repo}/issues/{issue_number}/timeline", "GET /repos/{owner}/{repo}/keys", "GET /repos/{owner}/{repo}/labels", "GET /repos/{owner}/{repo}/milestones", "GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels", "GET /repos/{owner}/{repo}/notifications", "GET /repos/{owner}/{repo}/pages/builds", "GET /repos/{owner}/{repo}/projects", "GET /repos/{owner}/{repo}/pulls", "GET /repos/{owner}/{repo}/pulls/comments", "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments", "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits", "GET /repos/{owner}/{repo}/pulls/{pull_number}/files", "GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews", "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments", "GET /repos/{owner}/{repo}/releases", "GET /repos/{owner}/{repo}/releases/{release_id}/assets", "GET /repos/{owner}/{repo}/secret-scanning/alerts", "GET /repos/{owner}/{repo}/stargazers", "GET /repos/{owner}/{repo}/subscribers", "GET /repos/{owner}/{repo}/tags", "GET /repos/{owner}/{repo}/teams", "GET /repositories", "GET /repositories/{repository_id}/environments/{environment_name}/secrets", "GET /scim/v2/enterprises/{enterprise}/Groups", "GET /scim/v2/enterprises/{enterprise}/Users", "GET /scim/v2/organizations/{org}/Users", "GET /search/code", "GET /search/commits", "GET /search/issues", "GET /search/labels", "GET /search/repositories", "GET /search/topics", "GET /search/users", "GET /teams/{team_id}/discussions", "GET /teams/{team_id}/discussions/{discussion_number}/comments", "GET /teams/{team_id}/discussions/{discussion_number}/comments/{comment_number}/reactions", "GET /teams/{team_id}/discussions/{discussion_number}/reactions", "GET /teams/{team_id}/invitations", "GET /teams/{team_id}/members", "GET /teams/{team_id}/projects", "GET /teams/{team_id}/repos", "GET /teams/{team_id}/team-sync/group-mappings", "GET /teams/{team_id}/teams", "GET /user/blocks", "GET /user/emails", "GET /user/followers", "GET /user/following", "GET /user/gpg_keys", "GET /user/installations", "GET /user/installations/{installation_id}/repositories", "GET /user/issues", "GET /user/keys", "GET /user/marketplace_purchases", "GET /user/marketplace_purchases/stubbed", "GET /user/memberships/orgs", "GET /user/migrations", "GET /user/migrations/{migration_id}/repositories", "GET /user/orgs", "GET /user/packages", "GET /user/public_emails", "GET /user/repos", "GET /user/repository_invitations", "GET /user/starred", "GET /user/subscriptions", "GET /user/teams", "GET /users", "GET /users/{username}/events", "GET /users/{username}/events/orgs/{org}", "GET /users/{username}/events/public", "GET /users/{username}/followers", "GET /users/{username}/following", "GET /users/{username}/gists", "GET /users/{username}/gpg_keys", "GET /users/{username}/keys", "GET /users/{username}/orgs", "GET /users/{username}/packages", "GET /users/{username}/projects", "GET /users/{username}/received_events", "GET /users/{username}/received_events/public", "GET /users/{username}/repos", "GET /users/{username}/starred", "GET /users/{username}/subscriptions"];
+const paginatingEndpoints = ["GET /app/hook/deliveries", "GET /app/installations", "GET /applications/grants", "GET /authorizations", "GET /enterprises/{enterprise}/actions/permissions/organizations", "GET /enterprises/{enterprise}/actions/runner-groups", "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations", "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners", "GET /enterprises/{enterprise}/actions/runners", "GET /enterprises/{enterprise}/audit-log", "GET /enterprises/{enterprise}/secret-scanning/alerts", "GET /enterprises/{enterprise}/settings/billing/advanced-security", "GET /events", "GET /gists", "GET /gists/public", "GET /gists/starred", "GET /gists/{gist_id}/comments", "GET /gists/{gist_id}/commits", "GET /gists/{gist_id}/forks", "GET /installation/repositories", "GET /issues", "GET /licenses", "GET /marketplace_listing/plans", "GET /marketplace_listing/plans/{plan_id}/accounts", "GET /marketplace_listing/stubbed/plans", "GET /marketplace_listing/stubbed/plans/{plan_id}/accounts", "GET /networks/{owner}/{repo}/events", "GET /notifications", "GET /organizations", "GET /orgs/{org}/actions/cache/usage-by-repository", "GET /orgs/{org}/actions/permissions/repositories", "GET /orgs/{org}/actions/runner-groups", "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/repositories", "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/runners", "GET /orgs/{org}/actions/runners", "GET /orgs/{org}/actions/secrets", "GET /orgs/{org}/actions/secrets/{secret_name}/repositories", "GET /orgs/{org}/audit-log", "GET /orgs/{org}/blocks", "GET /orgs/{org}/code-scanning/alerts", "GET /orgs/{org}/codespaces", "GET /orgs/{org}/credential-authorizations", "GET /orgs/{org}/dependabot/secrets", "GET /orgs/{org}/dependabot/secrets/{secret_name}/repositories", "GET /orgs/{org}/events", "GET /orgs/{org}/external-groups", "GET /orgs/{org}/failed_invitations", "GET /orgs/{org}/hooks", "GET /orgs/{org}/hooks/{hook_id}/deliveries", "GET /orgs/{org}/installations", "GET /orgs/{org}/invitations", "GET /orgs/{org}/invitations/{invitation_id}/teams", "GET /orgs/{org}/issues", "GET /orgs/{org}/members", "GET /orgs/{org}/migrations", "GET /orgs/{org}/migrations/{migration_id}/repositories", "GET /orgs/{org}/outside_collaborators", "GET /orgs/{org}/packages", "GET /orgs/{org}/packages/{package_type}/{package_name}/versions", "GET /orgs/{org}/projects", "GET /orgs/{org}/public_members", "GET /orgs/{org}/repos", "GET /orgs/{org}/secret-scanning/alerts", "GET /orgs/{org}/settings/billing/advanced-security", "GET /orgs/{org}/team-sync/groups", "GET /orgs/{org}/teams", "GET /orgs/{org}/teams/{team_slug}/discussions", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions", "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions", "GET /orgs/{org}/teams/{team_slug}/invitations", "GET /orgs/{org}/teams/{team_slug}/members", "GET /orgs/{org}/teams/{team_slug}/projects", "GET /orgs/{org}/teams/{team_slug}/repos", "GET /orgs/{org}/teams/{team_slug}/teams", "GET /projects/columns/{column_id}/cards", "GET /projects/{project_id}/collaborators", "GET /projects/{project_id}/columns", "GET /repos/{owner}/{repo}/actions/artifacts", "GET /repos/{owner}/{repo}/actions/caches", "GET /repos/{owner}/{repo}/actions/runners", "GET /repos/{owner}/{repo}/actions/runs", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs", "GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs", "GET /repos/{owner}/{repo}/actions/secrets", "GET /repos/{owner}/{repo}/actions/workflows", "GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs", "GET /repos/{owner}/{repo}/assignees", "GET /repos/{owner}/{repo}/branches", "GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations", "GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs", "GET /repos/{owner}/{repo}/code-scanning/alerts", "GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances", "GET /repos/{owner}/{repo}/code-scanning/analyses", "GET /repos/{owner}/{repo}/codespaces", "GET /repos/{owner}/{repo}/codespaces/devcontainers", "GET /repos/{owner}/{repo}/codespaces/secrets", "GET /repos/{owner}/{repo}/collaborators", "GET /repos/{owner}/{repo}/comments", "GET /repos/{owner}/{repo}/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/commits", "GET /repos/{owner}/{repo}/commits/{commit_sha}/comments", "GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls", "GET /repos/{owner}/{repo}/commits/{ref}/check-runs", "GET /repos/{owner}/{repo}/commits/{ref}/check-suites", "GET /repos/{owner}/{repo}/commits/{ref}/status", "GET /repos/{owner}/{repo}/commits/{ref}/statuses", "GET /repos/{owner}/{repo}/contributors", "GET /repos/{owner}/{repo}/dependabot/secrets", "GET /repos/{owner}/{repo}/deployments", "GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses", "GET /repos/{owner}/{repo}/environments", "GET /repos/{owner}/{repo}/events", "GET /repos/{owner}/{repo}/forks", "GET /repos/{owner}/{repo}/git/matching-refs/{ref}", "GET /repos/{owner}/{repo}/hooks", "GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries", "GET /repos/{owner}/{repo}/invitations", "GET /repos/{owner}/{repo}/issues", "GET /repos/{owner}/{repo}/issues/comments", "GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/issues/events", "GET /repos/{owner}/{repo}/issues/{issue_number}/comments", "GET /repos/{owner}/{repo}/issues/{issue_number}/events", "GET /repos/{owner}/{repo}/issues/{issue_number}/labels", "GET /repos/{owner}/{repo}/issues/{issue_number}/reactions", "GET /repos/{owner}/{repo}/issues/{issue_number}/timeline", "GET /repos/{owner}/{repo}/keys", "GET /repos/{owner}/{repo}/labels", "GET /repos/{owner}/{repo}/milestones", "GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels", "GET /repos/{owner}/{repo}/notifications", "GET /repos/{owner}/{repo}/pages/builds", "GET /repos/{owner}/{repo}/projects", "GET /repos/{owner}/{repo}/pulls", "GET /repos/{owner}/{repo}/pulls/comments", "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments", "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits", "GET /repos/{owner}/{repo}/pulls/{pull_number}/files", "GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews", "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments", "GET /repos/{owner}/{repo}/releases", "GET /repos/{owner}/{repo}/releases/{release_id}/assets", "GET /repos/{owner}/{repo}/releases/{release_id}/reactions", "GET /repos/{owner}/{repo}/secret-scanning/alerts", "GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations", "GET /repos/{owner}/{repo}/stargazers", "GET /repos/{owner}/{repo}/subscribers", "GET /repos/{owner}/{repo}/tags", "GET /repos/{owner}/{repo}/teams", "GET /repos/{owner}/{repo}/topics", "GET /repositories", "GET /repositories/{repository_id}/environments/{environment_name}/secrets", "GET /search/code", "GET /search/commits", "GET /search/issues", "GET /search/labels", "GET /search/repositories", "GET /search/topics", "GET /search/users", "GET /teams/{team_id}/discussions", "GET /teams/{team_id}/discussions/{discussion_number}/comments", "GET /teams/{team_id}/discussions/{discussion_number}/comments/{comment_number}/reactions", "GET /teams/{team_id}/discussions/{discussion_number}/reactions", "GET /teams/{team_id}/invitations", "GET /teams/{team_id}/members", "GET /teams/{team_id}/projects", "GET /teams/{team_id}/repos", "GET /teams/{team_id}/teams", "GET /user/blocks", "GET /user/codespaces", "GET /user/codespaces/secrets", "GET /user/emails", "GET /user/followers", "GET /user/following", "GET /user/gpg_keys", "GET /user/installations", "GET /user/installations/{installation_id}/repositories", "GET /user/issues", "GET /user/keys", "GET /user/marketplace_purchases", "GET /user/marketplace_purchases/stubbed", "GET /user/memberships/orgs", "GET /user/migrations", "GET /user/migrations/{migration_id}/repositories", "GET /user/orgs", "GET /user/packages", "GET /user/packages/{package_type}/{package_name}/versions", "GET /user/public_emails", "GET /user/repos", "GET /user/repository_invitations", "GET /user/starred", "GET /user/subscriptions", "GET /user/teams", "GET /users", "GET /users/{username}/events", "GET /users/{username}/events/orgs/{org}", "GET /users/{username}/events/public", "GET /users/{username}/followers", "GET /users/{username}/following", "GET /users/{username}/gists", "GET /users/{username}/gpg_keys", "GET /users/{username}/keys", "GET /users/{username}/orgs", "GET /users/{username}/packages", "GET /users/{username}/projects", "GET /users/{username}/received_events", "GET /users/{username}/received_events/public", "GET /users/{username}/repos", "GET /users/{username}/starred", "GET /users/{username}/subscriptions"];
 
 function isPaginatingEndpoint(arg) {
   if (typeof arg === "string") {
@@ -3758,29 +4272,18 @@ exports.paginatingEndpoints = paginatingEndpoints;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 
-function _defineProperty(obj, key, value) {
-  if (key in obj) {
-    Object.defineProperty(obj, key, {
-      value: value,
-      enumerable: true,
-      configurable: true,
-      writable: true
-    });
-  } else {
-    obj[key] = value;
-  }
-
-  return obj;
-}
-
 function ownKeys(object, enumerableOnly) {
   var keys = Object.keys(object);
 
   if (Object.getOwnPropertySymbols) {
     var symbols = Object.getOwnPropertySymbols(object);
-    if (enumerableOnly) symbols = symbols.filter(function (sym) {
-      return Object.getOwnPropertyDescriptor(object, sym).enumerable;
-    });
+
+    if (enumerableOnly) {
+      symbols = symbols.filter(function (sym) {
+        return Object.getOwnPropertyDescriptor(object, sym).enumerable;
+      });
+    }
+
     keys.push.apply(keys, symbols);
   }
 
@@ -3807,9 +4310,27 @@ function _objectSpread2(target) {
   return target;
 }
 
+function _defineProperty(obj, key, value) {
+  if (key in obj) {
+    Object.defineProperty(obj, key, {
+      value: value,
+      enumerable: true,
+      configurable: true,
+      writable: true
+    });
+  } else {
+    obj[key] = value;
+  }
+
+  return obj;
+}
+
 const Endpoints = {
   actions: {
+    addCustomLabelsToSelfHostedRunnerForOrg: ["POST /orgs/{org}/actions/runners/{runner_id}/labels"],
+    addCustomLabelsToSelfHostedRunnerForRepo: ["POST /repos/{owner}/{repo}/actions/runners/{runner_id}/labels"],
     addSelectedRepoToOrgSecret: ["PUT /orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}"],
+    approveWorkflowRun: ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/approve"],
     cancelWorkflowRun: ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel"],
     createOrUpdateEnvironmentSecret: ["PUT /repositories/{repository_id}/environments/{environment_name}/secrets/{secret_name}"],
     createOrUpdateOrgSecret: ["PUT /orgs/{org}/actions/secrets/{secret_name}"],
@@ -3819,6 +4340,8 @@ const Endpoints = {
     createRemoveTokenForOrg: ["POST /orgs/{org}/actions/runners/remove-token"],
     createRemoveTokenForRepo: ["POST /repos/{owner}/{repo}/actions/runners/remove-token"],
     createWorkflowDispatch: ["POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches"],
+    deleteActionsCacheById: ["DELETE /repos/{owner}/{repo}/actions/caches/{cache_id}"],
+    deleteActionsCacheByKey: ["DELETE /repos/{owner}/{repo}/actions/caches{?key,ref}"],
     deleteArtifact: ["DELETE /repos/{owner}/{repo}/actions/artifacts/{artifact_id}"],
     deleteEnvironmentSecret: ["DELETE /repositories/{repository_id}/environments/{environment_name}/secrets/{secret_name}"],
     deleteOrgSecret: ["DELETE /orgs/{org}/actions/secrets/{secret_name}"],
@@ -3831,14 +4354,23 @@ const Endpoints = {
     disableWorkflow: ["PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable"],
     downloadArtifact: ["GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format}"],
     downloadJobLogsForWorkflowRun: ["GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs"],
+    downloadWorkflowRunAttemptLogs: ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/logs"],
     downloadWorkflowRunLogs: ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/logs"],
     enableSelectedRepositoryGithubActionsOrganization: ["PUT /orgs/{org}/actions/permissions/repositories/{repository_id}"],
     enableWorkflow: ["PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable"],
+    getActionsCacheList: ["GET /repos/{owner}/{repo}/actions/caches"],
+    getActionsCacheUsage: ["GET /repos/{owner}/{repo}/actions/cache/usage"],
+    getActionsCacheUsageByRepoForOrg: ["GET /orgs/{org}/actions/cache/usage-by-repository"],
+    getActionsCacheUsageForEnterprise: ["GET /enterprises/{enterprise}/actions/cache/usage"],
+    getActionsCacheUsageForOrg: ["GET /orgs/{org}/actions/cache/usage"],
     getAllowedActionsOrganization: ["GET /orgs/{org}/actions/permissions/selected-actions"],
     getAllowedActionsRepository: ["GET /repos/{owner}/{repo}/actions/permissions/selected-actions"],
     getArtifact: ["GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}"],
     getEnvironmentPublicKey: ["GET /repositories/{repository_id}/environments/{environment_name}/secrets/public-key"],
     getEnvironmentSecret: ["GET /repositories/{repository_id}/environments/{environment_name}/secrets/{secret_name}"],
+    getGithubActionsDefaultWorkflowPermissionsEnterprise: ["GET /enterprises/{enterprise}/actions/permissions/workflow"],
+    getGithubActionsDefaultWorkflowPermissionsOrganization: ["GET /orgs/{org}/actions/permissions/workflow"],
+    getGithubActionsDefaultWorkflowPermissionsRepository: ["GET /repos/{owner}/{repo}/actions/permissions/workflow"],
     getGithubActionsPermissionsOrganization: ["GET /orgs/{org}/actions/permissions"],
     getGithubActionsPermissionsRepository: ["GET /repos/{owner}/{repo}/actions/permissions"],
     getJobForWorkflowRun: ["GET /repos/{owner}/{repo}/actions/jobs/{job_id}"],
@@ -3854,12 +4386,17 @@ const Endpoints = {
     getSelfHostedRunnerForOrg: ["GET /orgs/{org}/actions/runners/{runner_id}"],
     getSelfHostedRunnerForRepo: ["GET /repos/{owner}/{repo}/actions/runners/{runner_id}"],
     getWorkflow: ["GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}"],
+    getWorkflowAccessToRepository: ["GET /repos/{owner}/{repo}/actions/permissions/access"],
     getWorkflowRun: ["GET /repos/{owner}/{repo}/actions/runs/{run_id}"],
+    getWorkflowRunAttempt: ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}"],
     getWorkflowRunUsage: ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/timing"],
     getWorkflowUsage: ["GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/timing"],
     listArtifactsForRepo: ["GET /repos/{owner}/{repo}/actions/artifacts"],
     listEnvironmentSecrets: ["GET /repositories/{repository_id}/environments/{environment_name}/secrets"],
     listJobsForWorkflowRun: ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs"],
+    listJobsForWorkflowRunAttempt: ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs"],
+    listLabelsForSelfHostedRunnerForOrg: ["GET /orgs/{org}/actions/runners/{runner_id}/labels"],
+    listLabelsForSelfHostedRunnerForRepo: ["GET /repos/{owner}/{repo}/actions/runners/{runner_id}/labels"],
     listOrgSecrets: ["GET /orgs/{org}/actions/secrets"],
     listRepoSecrets: ["GET /repos/{owner}/{repo}/actions/secrets"],
     listRepoWorkflows: ["GET /repos/{owner}/{repo}/actions/workflows"],
@@ -3872,15 +4409,27 @@ const Endpoints = {
     listWorkflowRunArtifacts: ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"],
     listWorkflowRuns: ["GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs"],
     listWorkflowRunsForRepo: ["GET /repos/{owner}/{repo}/actions/runs"],
+    reRunJobForWorkflowRun: ["POST /repos/{owner}/{repo}/actions/jobs/{job_id}/rerun"],
     reRunWorkflow: ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun"],
+    reRunWorkflowFailedJobs: ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs"],
+    removeAllCustomLabelsFromSelfHostedRunnerForOrg: ["DELETE /orgs/{org}/actions/runners/{runner_id}/labels"],
+    removeAllCustomLabelsFromSelfHostedRunnerForRepo: ["DELETE /repos/{owner}/{repo}/actions/runners/{runner_id}/labels"],
+    removeCustomLabelFromSelfHostedRunnerForOrg: ["DELETE /orgs/{org}/actions/runners/{runner_id}/labels/{name}"],
+    removeCustomLabelFromSelfHostedRunnerForRepo: ["DELETE /repos/{owner}/{repo}/actions/runners/{runner_id}/labels/{name}"],
     removeSelectedRepoFromOrgSecret: ["DELETE /orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}"],
     reviewPendingDeploymentsForRun: ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments"],
     setAllowedActionsOrganization: ["PUT /orgs/{org}/actions/permissions/selected-actions"],
     setAllowedActionsRepository: ["PUT /repos/{owner}/{repo}/actions/permissions/selected-actions"],
+    setCustomLabelsForSelfHostedRunnerForOrg: ["PUT /orgs/{org}/actions/runners/{runner_id}/labels"],
+    setCustomLabelsForSelfHostedRunnerForRepo: ["PUT /repos/{owner}/{repo}/actions/runners/{runner_id}/labels"],
+    setGithubActionsDefaultWorkflowPermissionsEnterprise: ["PUT /enterprises/{enterprise}/actions/permissions/workflow"],
+    setGithubActionsDefaultWorkflowPermissionsOrganization: ["PUT /orgs/{org}/actions/permissions/workflow"],
+    setGithubActionsDefaultWorkflowPermissionsRepository: ["PUT /repos/{owner}/{repo}/actions/permissions/workflow"],
     setGithubActionsPermissionsOrganization: ["PUT /orgs/{org}/actions/permissions"],
     setGithubActionsPermissionsRepository: ["PUT /repos/{owner}/{repo}/actions/permissions"],
     setSelectedReposForOrgSecret: ["PUT /orgs/{org}/actions/secrets/{secret_name}/repositories"],
-    setSelectedRepositoriesEnabledGithubActionsOrganization: ["PUT /orgs/{org}/actions/permissions/repositories"]
+    setSelectedRepositoriesEnabledGithubActionsOrganization: ["PUT /orgs/{org}/actions/permissions/repositories"],
+    setWorkflowAccessToRepository: ["PUT /repos/{owner}/{repo}/actions/permissions/access"]
   },
   activity: {
     checkRepoIsStarredByAuthenticatedUser: ["GET /user/starred/{owner}/{repo}"],
@@ -3916,13 +4465,11 @@ const Endpoints = {
     unstarRepoForAuthenticatedUser: ["DELETE /user/starred/{owner}/{repo}"]
   },
   apps: {
-    addRepoToInstallation: ["PUT /user/installations/{installation_id}/repositories/{repository_id}"],
-    checkToken: ["POST /applications/{client_id}/token"],
-    createContentAttachment: ["POST /content_references/{content_reference_id}/attachments", {
-      mediaType: {
-        previews: ["corsair"]
-      }
+    addRepoToInstallation: ["PUT /user/installations/{installation_id}/repositories/{repository_id}", {}, {
+      renamed: ["apps", "addRepoToInstallationForAuthenticatedUser"]
     }],
+    addRepoToInstallationForAuthenticatedUser: ["PUT /user/installations/{installation_id}/repositories/{repository_id}"],
+    checkToken: ["POST /applications/{client_id}/token"],
     createFromManifest: ["POST /app-manifests/{code}/conversions"],
     createInstallationAccessToken: ["POST /app/installations/{installation_id}/access_tokens"],
     deleteAuthorization: ["DELETE /applications/{client_id}/grant"],
@@ -3937,6 +4484,7 @@ const Endpoints = {
     getSubscriptionPlanForAccountStubbed: ["GET /marketplace_listing/stubbed/accounts/{account_id}"],
     getUserInstallation: ["GET /users/{username}/installation"],
     getWebhookConfigForApp: ["GET /app/hook/config"],
+    getWebhookDelivery: ["GET /app/hook/deliveries/{delivery_id}"],
     listAccountsForPlan: ["GET /marketplace_listing/plans/{plan_id}/accounts"],
     listAccountsForPlanStubbed: ["GET /marketplace_listing/stubbed/plans/{plan_id}/accounts"],
     listInstallationReposForAuthenticatedUser: ["GET /user/installations/{installation_id}/repositories"],
@@ -3947,7 +4495,12 @@ const Endpoints = {
     listReposAccessibleToInstallation: ["GET /installation/repositories"],
     listSubscriptionsForAuthenticatedUser: ["GET /user/marketplace_purchases"],
     listSubscriptionsForAuthenticatedUserStubbed: ["GET /user/marketplace_purchases/stubbed"],
-    removeRepoFromInstallation: ["DELETE /user/installations/{installation_id}/repositories/{repository_id}"],
+    listWebhookDeliveries: ["GET /app/hook/deliveries"],
+    redeliverWebhookDelivery: ["POST /app/hook/deliveries/{delivery_id}/attempts"],
+    removeRepoFromInstallation: ["DELETE /user/installations/{installation_id}/repositories/{repository_id}", {}, {
+      renamed: ["apps", "removeRepoFromInstallationForAuthenticatedUser"]
+    }],
+    removeRepoFromInstallationForAuthenticatedUser: ["DELETE /user/installations/{installation_id}/repositories/{repository_id}"],
     resetToken: ["PATCH /applications/{client_id}/token"],
     revokeInstallationAccessToken: ["DELETE /installation/token"],
     scopeToken: ["POST /applications/{client_id}/token/scoped"],
@@ -3958,6 +4511,8 @@ const Endpoints = {
   billing: {
     getGithubActionsBillingOrg: ["GET /orgs/{org}/settings/billing/actions"],
     getGithubActionsBillingUser: ["GET /users/{username}/settings/billing/actions"],
+    getGithubAdvancedSecurityBillingGhe: ["GET /enterprises/{enterprise}/settings/billing/advanced-security"],
+    getGithubAdvancedSecurityBillingOrg: ["GET /orgs/{org}/settings/billing/advanced-security"],
     getGithubPackagesBillingOrg: ["GET /orgs/{org}/settings/billing/packages"],
     getGithubPackagesBillingUser: ["GET /users/{username}/settings/billing/packages"],
     getSharedStorageBillingOrg: ["GET /orgs/{org}/settings/billing/shared-storage"],
@@ -3972,6 +4527,7 @@ const Endpoints = {
     listForRef: ["GET /repos/{owner}/{repo}/commits/{ref}/check-runs"],
     listForSuite: ["GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs"],
     listSuitesForRef: ["GET /repos/{owner}/{repo}/commits/{ref}/check-suites"],
+    rerequestRun: ["POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest"],
     rerequestSuite: ["POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest"],
     setSuitesPreferences: ["PATCH /repos/{owner}/{repo}/check-suites/preferences"],
     update: ["PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}"]
@@ -3985,39 +4541,94 @@ const Endpoints = {
     }],
     getAnalysis: ["GET /repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}"],
     getSarif: ["GET /repos/{owner}/{repo}/code-scanning/sarifs/{sarif_id}"],
+    listAlertInstances: ["GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances"],
+    listAlertsForOrg: ["GET /orgs/{org}/code-scanning/alerts"],
     listAlertsForRepo: ["GET /repos/{owner}/{repo}/code-scanning/alerts"],
-    listAlertsInstances: ["GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances"],
+    listAlertsInstances: ["GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances", {}, {
+      renamed: ["codeScanning", "listAlertInstances"]
+    }],
     listRecentAnalyses: ["GET /repos/{owner}/{repo}/code-scanning/analyses"],
     updateAlert: ["PATCH /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}"],
     uploadSarif: ["POST /repos/{owner}/{repo}/code-scanning/sarifs"]
   },
   codesOfConduct: {
-    getAllCodesOfConduct: ["GET /codes_of_conduct", {
-      mediaType: {
-        previews: ["scarlet-witch"]
+    getAllCodesOfConduct: ["GET /codes_of_conduct"],
+    getConductCode: ["GET /codes_of_conduct/{key}"]
+  },
+  codespaces: {
+    addRepositoryForSecretForAuthenticatedUser: ["PUT /user/codespaces/secrets/{secret_name}/repositories/{repository_id}"],
+    codespaceMachinesForAuthenticatedUser: ["GET /user/codespaces/{codespace_name}/machines"],
+    createForAuthenticatedUser: ["POST /user/codespaces"],
+    createOrUpdateRepoSecret: ["PUT /repos/{owner}/{repo}/codespaces/secrets/{secret_name}"],
+    createOrUpdateSecretForAuthenticatedUser: ["PUT /user/codespaces/secrets/{secret_name}"],
+    createWithPrForAuthenticatedUser: ["POST /repos/{owner}/{repo}/pulls/{pull_number}/codespaces"],
+    createWithRepoForAuthenticatedUser: ["POST /repos/{owner}/{repo}/codespaces"],
+    deleteForAuthenticatedUser: ["DELETE /user/codespaces/{codespace_name}"],
+    deleteFromOrganization: ["DELETE /orgs/{org}/members/{username}/codespaces/{codespace_name}"],
+    deleteRepoSecret: ["DELETE /repos/{owner}/{repo}/codespaces/secrets/{secret_name}"],
+    deleteSecretForAuthenticatedUser: ["DELETE /user/codespaces/secrets/{secret_name}"],
+    exportForAuthenticatedUser: ["POST /user/codespaces/{codespace_name}/exports"],
+    getExportDetailsForAuthenticatedUser: ["GET /user/codespaces/{codespace_name}/exports/{export_id}"],
+    getForAuthenticatedUser: ["GET /user/codespaces/{codespace_name}"],
+    getPublicKeyForAuthenticatedUser: ["GET /user/codespaces/secrets/public-key"],
+    getRepoPublicKey: ["GET /repos/{owner}/{repo}/codespaces/secrets/public-key"],
+    getRepoSecret: ["GET /repos/{owner}/{repo}/codespaces/secrets/{secret_name}"],
+    getSecretForAuthenticatedUser: ["GET /user/codespaces/secrets/{secret_name}"],
+    listDevcontainersInRepositoryForAuthenticatedUser: ["GET /repos/{owner}/{repo}/codespaces/devcontainers"],
+    listForAuthenticatedUser: ["GET /user/codespaces"],
+    listInOrganization: ["GET /orgs/{org}/codespaces", {}, {
+      renamedParameters: {
+        org_id: "org"
       }
     }],
-    getConductCode: ["GET /codes_of_conduct/{key}", {
-      mediaType: {
-        previews: ["scarlet-witch"]
-      }
-    }],
-    getForRepo: ["GET /repos/{owner}/{repo}/community/code_of_conduct", {
-      mediaType: {
-        previews: ["scarlet-witch"]
-      }
-    }]
+    listInRepositoryForAuthenticatedUser: ["GET /repos/{owner}/{repo}/codespaces"],
+    listRepoSecrets: ["GET /repos/{owner}/{repo}/codespaces/secrets"],
+    listRepositoriesForSecretForAuthenticatedUser: ["GET /user/codespaces/secrets/{secret_name}/repositories"],
+    listSecretsForAuthenticatedUser: ["GET /user/codespaces/secrets"],
+    removeRepositoryForSecretForAuthenticatedUser: ["DELETE /user/codespaces/secrets/{secret_name}/repositories/{repository_id}"],
+    repoMachinesForAuthenticatedUser: ["GET /repos/{owner}/{repo}/codespaces/machines"],
+    setRepositoriesForSecretForAuthenticatedUser: ["PUT /user/codespaces/secrets/{secret_name}/repositories"],
+    startForAuthenticatedUser: ["POST /user/codespaces/{codespace_name}/start"],
+    stopForAuthenticatedUser: ["POST /user/codespaces/{codespace_name}/stop"],
+    stopInOrganization: ["POST /orgs/{org}/members/{username}/codespaces/{codespace_name}/stop"],
+    updateForAuthenticatedUser: ["PATCH /user/codespaces/{codespace_name}"]
+  },
+  dependabot: {
+    addSelectedRepoToOrgSecret: ["PUT /orgs/{org}/dependabot/secrets/{secret_name}/repositories/{repository_id}"],
+    createOrUpdateOrgSecret: ["PUT /orgs/{org}/dependabot/secrets/{secret_name}"],
+    createOrUpdateRepoSecret: ["PUT /repos/{owner}/{repo}/dependabot/secrets/{secret_name}"],
+    deleteOrgSecret: ["DELETE /orgs/{org}/dependabot/secrets/{secret_name}"],
+    deleteRepoSecret: ["DELETE /repos/{owner}/{repo}/dependabot/secrets/{secret_name}"],
+    getOrgPublicKey: ["GET /orgs/{org}/dependabot/secrets/public-key"],
+    getOrgSecret: ["GET /orgs/{org}/dependabot/secrets/{secret_name}"],
+    getRepoPublicKey: ["GET /repos/{owner}/{repo}/dependabot/secrets/public-key"],
+    getRepoSecret: ["GET /repos/{owner}/{repo}/dependabot/secrets/{secret_name}"],
+    listOrgSecrets: ["GET /orgs/{org}/dependabot/secrets"],
+    listRepoSecrets: ["GET /repos/{owner}/{repo}/dependabot/secrets"],
+    listSelectedReposForOrgSecret: ["GET /orgs/{org}/dependabot/secrets/{secret_name}/repositories"],
+    removeSelectedRepoFromOrgSecret: ["DELETE /orgs/{org}/dependabot/secrets/{secret_name}/repositories/{repository_id}"],
+    setSelectedReposForOrgSecret: ["PUT /orgs/{org}/dependabot/secrets/{secret_name}/repositories"]
+  },
+  dependencyGraph: {
+    createRepositorySnapshot: ["POST /repos/{owner}/{repo}/dependency-graph/snapshots"],
+    diffRange: ["GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead}"]
   },
   emojis: {
     get: ["GET /emojis"]
   },
   enterpriseAdmin: {
+    addCustomLabelsToSelfHostedRunnerForEnterprise: ["POST /enterprises/{enterprise}/actions/runners/{runner_id}/labels"],
     disableSelectedOrganizationGithubActionsEnterprise: ["DELETE /enterprises/{enterprise}/actions/permissions/organizations/{org_id}"],
     enableSelectedOrganizationGithubActionsEnterprise: ["PUT /enterprises/{enterprise}/actions/permissions/organizations/{org_id}"],
     getAllowedActionsEnterprise: ["GET /enterprises/{enterprise}/actions/permissions/selected-actions"],
     getGithubActionsPermissionsEnterprise: ["GET /enterprises/{enterprise}/actions/permissions"],
+    getServerStatistics: ["GET /enterprise-installation/{enterprise_or_org}/server-statistics"],
+    listLabelsForSelfHostedRunnerForEnterprise: ["GET /enterprises/{enterprise}/actions/runners/{runner_id}/labels"],
     listSelectedOrganizationsEnabledGithubActionsEnterprise: ["GET /enterprises/{enterprise}/actions/permissions/organizations"],
+    removeAllCustomLabelsFromSelfHostedRunnerForEnterprise: ["DELETE /enterprises/{enterprise}/actions/runners/{runner_id}/labels"],
+    removeCustomLabelFromSelfHostedRunnerForEnterprise: ["DELETE /enterprises/{enterprise}/actions/runners/{runner_id}/labels/{name}"],
     setAllowedActionsEnterprise: ["PUT /enterprises/{enterprise}/actions/permissions/selected-actions"],
+    setCustomLabelsForSelfHostedRunnerForEnterprise: ["PUT /enterprises/{enterprise}/actions/runners/{runner_id}/labels"],
     setGithubActionsPermissionsEnterprise: ["PUT /enterprises/{enterprise}/actions/permissions"],
     setSelectedOrganizationsEnabledGithubActionsEnterprise: ["PUT /enterprises/{enterprise}/actions/permissions/organizations"]
   },
@@ -4104,11 +4715,7 @@ const Endpoints = {
     listCommentsForRepo: ["GET /repos/{owner}/{repo}/issues/comments"],
     listEvents: ["GET /repos/{owner}/{repo}/issues/{issue_number}/events"],
     listEventsForRepo: ["GET /repos/{owner}/{repo}/issues/events"],
-    listEventsForTimeline: ["GET /repos/{owner}/{repo}/issues/{issue_number}/timeline", {
-      mediaType: {
-        previews: ["mockingbird"]
-      }
-    }],
+    listEventsForTimeline: ["GET /repos/{owner}/{repo}/issues/{issue_number}/timeline"],
     listForAuthenticatedUser: ["GET /user/issues"],
     listForOrg: ["GET /orgs/{org}/issues"],
     listForRepo: ["GET /repos/{owner}/{repo}/issues"],
@@ -4148,74 +4755,29 @@ const Endpoints = {
   },
   migrations: {
     cancelImport: ["DELETE /repos/{owner}/{repo}/import"],
-    deleteArchiveForAuthenticatedUser: ["DELETE /user/migrations/{migration_id}/archive", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
-    deleteArchiveForOrg: ["DELETE /orgs/{org}/migrations/{migration_id}/archive", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
-    downloadArchiveForOrg: ["GET /orgs/{org}/migrations/{migration_id}/archive", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
-    getArchiveForAuthenticatedUser: ["GET /user/migrations/{migration_id}/archive", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
+    deleteArchiveForAuthenticatedUser: ["DELETE /user/migrations/{migration_id}/archive"],
+    deleteArchiveForOrg: ["DELETE /orgs/{org}/migrations/{migration_id}/archive"],
+    downloadArchiveForOrg: ["GET /orgs/{org}/migrations/{migration_id}/archive"],
+    getArchiveForAuthenticatedUser: ["GET /user/migrations/{migration_id}/archive"],
     getCommitAuthors: ["GET /repos/{owner}/{repo}/import/authors"],
     getImportStatus: ["GET /repos/{owner}/{repo}/import"],
     getLargeFiles: ["GET /repos/{owner}/{repo}/import/large_files"],
-    getStatusForAuthenticatedUser: ["GET /user/migrations/{migration_id}", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
-    getStatusForOrg: ["GET /orgs/{org}/migrations/{migration_id}", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
-    listForAuthenticatedUser: ["GET /user/migrations", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
-    listForOrg: ["GET /orgs/{org}/migrations", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
-    listReposForOrg: ["GET /orgs/{org}/migrations/{migration_id}/repositories", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
-    listReposForUser: ["GET /user/migrations/{migration_id}/repositories", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
+    getStatusForAuthenticatedUser: ["GET /user/migrations/{migration_id}"],
+    getStatusForOrg: ["GET /orgs/{org}/migrations/{migration_id}"],
+    listForAuthenticatedUser: ["GET /user/migrations"],
+    listForOrg: ["GET /orgs/{org}/migrations"],
+    listReposForAuthenticatedUser: ["GET /user/migrations/{migration_id}/repositories"],
+    listReposForOrg: ["GET /orgs/{org}/migrations/{migration_id}/repositories"],
+    listReposForUser: ["GET /user/migrations/{migration_id}/repositories", {}, {
+      renamed: ["migrations", "listReposForAuthenticatedUser"]
     }],
     mapCommitAuthor: ["PATCH /repos/{owner}/{repo}/import/authors/{author_id}"],
     setLfsPreference: ["PATCH /repos/{owner}/{repo}/import/lfs"],
     startForAuthenticatedUser: ["POST /user/migrations"],
     startForOrg: ["POST /orgs/{org}/migrations"],
     startImport: ["PUT /repos/{owner}/{repo}/import"],
-    unlockRepoForAuthenticatedUser: ["DELETE /user/migrations/{migration_id}/repos/{repo_name}/lock", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
-    unlockRepoForOrg: ["DELETE /orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock", {
-      mediaType: {
-        previews: ["wyandotte"]
-      }
-    }],
+    unlockRepoForAuthenticatedUser: ["DELETE /user/migrations/{migration_id}/repos/{repo_name}/lock"],
+    unlockRepoForOrg: ["DELETE /orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock"],
     updateImport: ["PATCH /repos/{owner}/{repo}/import"]
   },
   orgs: {
@@ -4233,9 +4795,11 @@ const Endpoints = {
     getMembershipForUser: ["GET /orgs/{org}/memberships/{username}"],
     getWebhook: ["GET /orgs/{org}/hooks/{hook_id}"],
     getWebhookConfigForOrg: ["GET /orgs/{org}/hooks/{hook_id}/config"],
+    getWebhookDelivery: ["GET /orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}"],
     list: ["GET /organizations"],
     listAppInstallations: ["GET /orgs/{org}/installations"],
     listBlockedUsers: ["GET /orgs/{org}/blocks"],
+    listCustomRoles: ["GET /organizations/{organization_id}/custom_roles"],
     listFailedInvitations: ["GET /orgs/{org}/failed_invitations"],
     listForAuthenticatedUser: ["GET /user/orgs"],
     listForUser: ["GET /users/{username}/orgs"],
@@ -4245,8 +4809,10 @@ const Endpoints = {
     listOutsideCollaborators: ["GET /orgs/{org}/outside_collaborators"],
     listPendingInvitations: ["GET /orgs/{org}/invitations"],
     listPublicMembers: ["GET /orgs/{org}/public_members"],
+    listWebhookDeliveries: ["GET /orgs/{org}/hooks/{hook_id}/deliveries"],
     listWebhooks: ["GET /orgs/{org}/hooks"],
     pingWebhook: ["POST /orgs/{org}/hooks/{hook_id}/pings"],
+    redeliverWebhookDelivery: ["POST /orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}/attempts"],
     removeMember: ["DELETE /orgs/{org}/members/{username}"],
     removeMembershipForUser: ["DELETE /orgs/{org}/memberships/{username}"],
     removeOutsideCollaborator: ["DELETE /orgs/{org}/outside_collaborators/{username}"],
@@ -4262,8 +4828,10 @@ const Endpoints = {
   packages: {
     deletePackageForAuthenticatedUser: ["DELETE /user/packages/{package_type}/{package_name}"],
     deletePackageForOrg: ["DELETE /orgs/{org}/packages/{package_type}/{package_name}"],
+    deletePackageForUser: ["DELETE /users/{username}/packages/{package_type}/{package_name}"],
     deletePackageVersionForAuthenticatedUser: ["DELETE /user/packages/{package_type}/{package_name}/versions/{package_version_id}"],
     deletePackageVersionForOrg: ["DELETE /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}"],
+    deletePackageVersionForUser: ["DELETE /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}"],
     getAllPackageVersionsForAPackageOwnedByAnOrg: ["GET /orgs/{org}/packages/{package_type}/{package_name}/versions", {}, {
       renamed: ["packages", "getAllPackageVersionsForPackageOwnedByOrg"]
     }],
@@ -4279,137 +4847,42 @@ const Endpoints = {
     getPackageVersionForAuthenticatedUser: ["GET /user/packages/{package_type}/{package_name}/versions/{package_version_id}"],
     getPackageVersionForOrganization: ["GET /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}"],
     getPackageVersionForUser: ["GET /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}"],
+    listPackagesForAuthenticatedUser: ["GET /user/packages"],
+    listPackagesForOrganization: ["GET /orgs/{org}/packages"],
+    listPackagesForUser: ["GET /users/{username}/packages"],
     restorePackageForAuthenticatedUser: ["POST /user/packages/{package_type}/{package_name}/restore{?token}"],
     restorePackageForOrg: ["POST /orgs/{org}/packages/{package_type}/{package_name}/restore{?token}"],
+    restorePackageForUser: ["POST /users/{username}/packages/{package_type}/{package_name}/restore{?token}"],
     restorePackageVersionForAuthenticatedUser: ["POST /user/packages/{package_type}/{package_name}/versions/{package_version_id}/restore"],
-    restorePackageVersionForOrg: ["POST /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore"]
+    restorePackageVersionForOrg: ["POST /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore"],
+    restorePackageVersionForUser: ["POST /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore"]
   },
   projects: {
-    addCollaborator: ["PUT /projects/{project_id}/collaborators/{username}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    createCard: ["POST /projects/columns/{column_id}/cards", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    createColumn: ["POST /projects/{project_id}/columns", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    createForAuthenticatedUser: ["POST /user/projects", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    createForOrg: ["POST /orgs/{org}/projects", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    createForRepo: ["POST /repos/{owner}/{repo}/projects", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    delete: ["DELETE /projects/{project_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    deleteCard: ["DELETE /projects/columns/cards/{card_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    deleteColumn: ["DELETE /projects/columns/{column_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    get: ["GET /projects/{project_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    getCard: ["GET /projects/columns/cards/{card_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    getColumn: ["GET /projects/columns/{column_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    getPermissionForUser: ["GET /projects/{project_id}/collaborators/{username}/permission", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    listCards: ["GET /projects/columns/{column_id}/cards", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    listCollaborators: ["GET /projects/{project_id}/collaborators", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    listColumns: ["GET /projects/{project_id}/columns", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    listForOrg: ["GET /orgs/{org}/projects", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    listForRepo: ["GET /repos/{owner}/{repo}/projects", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    listForUser: ["GET /users/{username}/projects", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    moveCard: ["POST /projects/columns/cards/{card_id}/moves", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    moveColumn: ["POST /projects/columns/{column_id}/moves", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    removeCollaborator: ["DELETE /projects/{project_id}/collaborators/{username}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    update: ["PATCH /projects/{project_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    updateCard: ["PATCH /projects/columns/cards/{card_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
-    updateColumn: ["PATCH /projects/columns/{column_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }]
+    addCollaborator: ["PUT /projects/{project_id}/collaborators/{username}"],
+    createCard: ["POST /projects/columns/{column_id}/cards"],
+    createColumn: ["POST /projects/{project_id}/columns"],
+    createForAuthenticatedUser: ["POST /user/projects"],
+    createForOrg: ["POST /orgs/{org}/projects"],
+    createForRepo: ["POST /repos/{owner}/{repo}/projects"],
+    delete: ["DELETE /projects/{project_id}"],
+    deleteCard: ["DELETE /projects/columns/cards/{card_id}"],
+    deleteColumn: ["DELETE /projects/columns/{column_id}"],
+    get: ["GET /projects/{project_id}"],
+    getCard: ["GET /projects/columns/cards/{card_id}"],
+    getColumn: ["GET /projects/columns/{column_id}"],
+    getPermissionForUser: ["GET /projects/{project_id}/collaborators/{username}/permission"],
+    listCards: ["GET /projects/columns/{column_id}/cards"],
+    listCollaborators: ["GET /projects/{project_id}/collaborators"],
+    listColumns: ["GET /projects/{project_id}/columns"],
+    listForOrg: ["GET /orgs/{org}/projects"],
+    listForRepo: ["GET /repos/{owner}/{repo}/projects"],
+    listForUser: ["GET /users/{username}/projects"],
+    moveCard: ["POST /projects/columns/cards/{card_id}/moves"],
+    moveColumn: ["POST /projects/columns/{column_id}/moves"],
+    removeCollaborator: ["DELETE /projects/{project_id}/collaborators/{username}"],
+    update: ["PATCH /projects/{project_id}"],
+    updateCard: ["PATCH /projects/columns/cards/{card_id}"],
+    updateColumn: ["PATCH /projects/columns/{column_id}"]
   },
   pulls: {
     checkIfMerged: ["GET /repos/{owner}/{repo}/pulls/{pull_number}/merge"],
@@ -4436,11 +4909,7 @@ const Endpoints = {
     requestReviewers: ["POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers"],
     submitReview: ["POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/events"],
     update: ["PATCH /repos/{owner}/{repo}/pulls/{pull_number}"],
-    updateBranch: ["PUT /repos/{owner}/{repo}/pulls/{pull_number}/update-branch", {
-      mediaType: {
-        previews: ["lydian"]
-      }
-    }],
+    updateBranch: ["PUT /repos/{owner}/{repo}/pulls/{pull_number}/update-branch"],
     updateReview: ["PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}"],
     updateReviewComment: ["PATCH /repos/{owner}/{repo}/pulls/comments/{comment_id}"]
   },
@@ -4448,106 +4917,33 @@ const Endpoints = {
     get: ["GET /rate_limit"]
   },
   reactions: {
-    createForCommitComment: ["POST /repos/{owner}/{repo}/comments/{comment_id}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    createForIssue: ["POST /repos/{owner}/{repo}/issues/{issue_number}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    createForIssueComment: ["POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    createForPullRequestReviewComment: ["POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    createForTeamDiscussionCommentInOrg: ["POST /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    createForTeamDiscussionInOrg: ["POST /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    deleteForCommitComment: ["DELETE /repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    deleteForIssue: ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    deleteForIssueComment: ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    deleteForPullRequestComment: ["DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    deleteForTeamDiscussion: ["DELETE /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions/{reaction_id}", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    deleteForTeamDiscussionComment: ["DELETE /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions/{reaction_id}", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    deleteLegacy: ["DELETE /reactions/{reaction_id}", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }, {
-      deprecated: "octokit.rest.reactions.deleteLegacy() is deprecated, see https://docs.github.com/rest/reference/reactions/#delete-a-reaction-legacy"
-    }],
-    listForCommitComment: ["GET /repos/{owner}/{repo}/comments/{comment_id}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    listForIssue: ["GET /repos/{owner}/{repo}/issues/{issue_number}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    listForIssueComment: ["GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    listForPullRequestReviewComment: ["GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    listForTeamDiscussionCommentInOrg: ["GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }],
-    listForTeamDiscussionInOrg: ["GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions", {
-      mediaType: {
-        previews: ["squirrel-girl"]
-      }
-    }]
+    createForCommitComment: ["POST /repos/{owner}/{repo}/comments/{comment_id}/reactions"],
+    createForIssue: ["POST /repos/{owner}/{repo}/issues/{issue_number}/reactions"],
+    createForIssueComment: ["POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions"],
+    createForPullRequestReviewComment: ["POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions"],
+    createForRelease: ["POST /repos/{owner}/{repo}/releases/{release_id}/reactions"],
+    createForTeamDiscussionCommentInOrg: ["POST /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions"],
+    createForTeamDiscussionInOrg: ["POST /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions"],
+    deleteForCommitComment: ["DELETE /repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}"],
+    deleteForIssue: ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}"],
+    deleteForIssueComment: ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}"],
+    deleteForPullRequestComment: ["DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}"],
+    deleteForRelease: ["DELETE /repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}"],
+    deleteForTeamDiscussion: ["DELETE /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions/{reaction_id}"],
+    deleteForTeamDiscussionComment: ["DELETE /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions/{reaction_id}"],
+    listForCommitComment: ["GET /repos/{owner}/{repo}/comments/{comment_id}/reactions"],
+    listForIssue: ["GET /repos/{owner}/{repo}/issues/{issue_number}/reactions"],
+    listForIssueComment: ["GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions"],
+    listForPullRequestReviewComment: ["GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions"],
+    listForRelease: ["GET /repos/{owner}/{repo}/releases/{release_id}/reactions"],
+    listForTeamDiscussionCommentInOrg: ["GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions"],
+    listForTeamDiscussionInOrg: ["GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions"]
   },
   repos: {
-    acceptInvitation: ["PATCH /user/repository_invitations/{invitation_id}"],
+    acceptInvitation: ["PATCH /user/repository_invitations/{invitation_id}", {}, {
+      renamed: ["repos", "acceptInvitationForAuthenticatedUser"]
+    }],
+    acceptInvitationForAuthenticatedUser: ["PATCH /user/repository_invitations/{invitation_id}"],
     addAppAccessRestrictions: ["POST /repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps", {}, {
       mapToData: "apps"
     }],
@@ -4562,18 +4958,13 @@ const Endpoints = {
       mapToData: "users"
     }],
     checkCollaborator: ["GET /repos/{owner}/{repo}/collaborators/{username}"],
-    checkVulnerabilityAlerts: ["GET /repos/{owner}/{repo}/vulnerability-alerts", {
-      mediaType: {
-        previews: ["dorian"]
-      }
-    }],
+    checkVulnerabilityAlerts: ["GET /repos/{owner}/{repo}/vulnerability-alerts"],
+    codeownersErrors: ["GET /repos/{owner}/{repo}/codeowners/errors"],
     compareCommits: ["GET /repos/{owner}/{repo}/compare/{base}...{head}"],
+    compareCommitsWithBasehead: ["GET /repos/{owner}/{repo}/compare/{basehead}"],
+    createAutolink: ["POST /repos/{owner}/{repo}/autolinks"],
     createCommitComment: ["POST /repos/{owner}/{repo}/commits/{commit_sha}/comments"],
-    createCommitSignatureProtection: ["POST /repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", {
-      mediaType: {
-        previews: ["zzzax"]
-      }
-    }],
+    createCommitSignatureProtection: ["POST /repos/{owner}/{repo}/branches/{branch}/protection/required_signatures"],
     createCommitStatus: ["POST /repos/{owner}/{repo}/statuses/{sha}"],
     createDeployKey: ["POST /repos/{owner}/{repo}/keys"],
     createDeployment: ["POST /repos/{owner}/{repo}/deployments"],
@@ -4584,79 +4975,53 @@ const Endpoints = {
     createInOrg: ["POST /orgs/{org}/repos"],
     createOrUpdateEnvironment: ["PUT /repos/{owner}/{repo}/environments/{environment_name}"],
     createOrUpdateFileContents: ["PUT /repos/{owner}/{repo}/contents/{path}"],
-    createPagesSite: ["POST /repos/{owner}/{repo}/pages", {
-      mediaType: {
-        previews: ["switcheroo"]
-      }
-    }],
+    createPagesSite: ["POST /repos/{owner}/{repo}/pages"],
     createRelease: ["POST /repos/{owner}/{repo}/releases"],
-    createUsingTemplate: ["POST /repos/{template_owner}/{template_repo}/generate", {
-      mediaType: {
-        previews: ["baptiste"]
-      }
-    }],
+    createTagProtection: ["POST /repos/{owner}/{repo}/tags/protection"],
+    createUsingTemplate: ["POST /repos/{template_owner}/{template_repo}/generate"],
     createWebhook: ["POST /repos/{owner}/{repo}/hooks"],
-    declineInvitation: ["DELETE /user/repository_invitations/{invitation_id}"],
+    declineInvitation: ["DELETE /user/repository_invitations/{invitation_id}", {}, {
+      renamed: ["repos", "declineInvitationForAuthenticatedUser"]
+    }],
+    declineInvitationForAuthenticatedUser: ["DELETE /user/repository_invitations/{invitation_id}"],
     delete: ["DELETE /repos/{owner}/{repo}"],
     deleteAccessRestrictions: ["DELETE /repos/{owner}/{repo}/branches/{branch}/protection/restrictions"],
     deleteAdminBranchProtection: ["DELETE /repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins"],
     deleteAnEnvironment: ["DELETE /repos/{owner}/{repo}/environments/{environment_name}"],
+    deleteAutolink: ["DELETE /repos/{owner}/{repo}/autolinks/{autolink_id}"],
     deleteBranchProtection: ["DELETE /repos/{owner}/{repo}/branches/{branch}/protection"],
     deleteCommitComment: ["DELETE /repos/{owner}/{repo}/comments/{comment_id}"],
-    deleteCommitSignatureProtection: ["DELETE /repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", {
-      mediaType: {
-        previews: ["zzzax"]
-      }
-    }],
+    deleteCommitSignatureProtection: ["DELETE /repos/{owner}/{repo}/branches/{branch}/protection/required_signatures"],
     deleteDeployKey: ["DELETE /repos/{owner}/{repo}/keys/{key_id}"],
     deleteDeployment: ["DELETE /repos/{owner}/{repo}/deployments/{deployment_id}"],
     deleteFile: ["DELETE /repos/{owner}/{repo}/contents/{path}"],
     deleteInvitation: ["DELETE /repos/{owner}/{repo}/invitations/{invitation_id}"],
-    deletePagesSite: ["DELETE /repos/{owner}/{repo}/pages", {
-      mediaType: {
-        previews: ["switcheroo"]
-      }
-    }],
+    deletePagesSite: ["DELETE /repos/{owner}/{repo}/pages"],
     deletePullRequestReviewProtection: ["DELETE /repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews"],
     deleteRelease: ["DELETE /repos/{owner}/{repo}/releases/{release_id}"],
     deleteReleaseAsset: ["DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}"],
+    deleteTagProtection: ["DELETE /repos/{owner}/{repo}/tags/protection/{tag_protection_id}"],
     deleteWebhook: ["DELETE /repos/{owner}/{repo}/hooks/{hook_id}"],
-    disableAutomatedSecurityFixes: ["DELETE /repos/{owner}/{repo}/automated-security-fixes", {
-      mediaType: {
-        previews: ["london"]
-      }
-    }],
-    disableVulnerabilityAlerts: ["DELETE /repos/{owner}/{repo}/vulnerability-alerts", {
-      mediaType: {
-        previews: ["dorian"]
-      }
-    }],
+    disableAutomatedSecurityFixes: ["DELETE /repos/{owner}/{repo}/automated-security-fixes"],
+    disableLfsForRepo: ["DELETE /repos/{owner}/{repo}/lfs"],
+    disableVulnerabilityAlerts: ["DELETE /repos/{owner}/{repo}/vulnerability-alerts"],
     downloadArchive: ["GET /repos/{owner}/{repo}/zipball/{ref}", {}, {
       renamed: ["repos", "downloadZipballArchive"]
     }],
     downloadTarballArchive: ["GET /repos/{owner}/{repo}/tarball/{ref}"],
     downloadZipballArchive: ["GET /repos/{owner}/{repo}/zipball/{ref}"],
-    enableAutomatedSecurityFixes: ["PUT /repos/{owner}/{repo}/automated-security-fixes", {
-      mediaType: {
-        previews: ["london"]
-      }
-    }],
-    enableVulnerabilityAlerts: ["PUT /repos/{owner}/{repo}/vulnerability-alerts", {
-      mediaType: {
-        previews: ["dorian"]
-      }
-    }],
+    enableAutomatedSecurityFixes: ["PUT /repos/{owner}/{repo}/automated-security-fixes"],
+    enableLfsForRepo: ["PUT /repos/{owner}/{repo}/lfs"],
+    enableVulnerabilityAlerts: ["PUT /repos/{owner}/{repo}/vulnerability-alerts"],
+    generateReleaseNotes: ["POST /repos/{owner}/{repo}/releases/generate-notes"],
     get: ["GET /repos/{owner}/{repo}"],
     getAccessRestrictions: ["GET /repos/{owner}/{repo}/branches/{branch}/protection/restrictions"],
     getAdminBranchProtection: ["GET /repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins"],
     getAllEnvironments: ["GET /repos/{owner}/{repo}/environments"],
     getAllStatusCheckContexts: ["GET /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts"],
-    getAllTopics: ["GET /repos/{owner}/{repo}/topics", {
-      mediaType: {
-        previews: ["mercy"]
-      }
-    }],
+    getAllTopics: ["GET /repos/{owner}/{repo}/topics"],
     getAppsWithAccessToProtectedBranch: ["GET /repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps"],
+    getAutolink: ["GET /repos/{owner}/{repo}/autolinks/{autolink_id}"],
     getBranch: ["GET /repos/{owner}/{repo}/branches/{branch}"],
     getBranchProtection: ["GET /repos/{owner}/{repo}/branches/{branch}/protection"],
     getClones: ["GET /repos/{owner}/{repo}/traffic/clones"],
@@ -4666,11 +5031,7 @@ const Endpoints = {
     getCommit: ["GET /repos/{owner}/{repo}/commits/{ref}"],
     getCommitActivityStats: ["GET /repos/{owner}/{repo}/stats/commit_activity"],
     getCommitComment: ["GET /repos/{owner}/{repo}/comments/{comment_id}"],
-    getCommitSignatureProtection: ["GET /repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", {
-      mediaType: {
-        previews: ["zzzax"]
-      }
-    }],
+    getCommitSignatureProtection: ["GET /repos/{owner}/{repo}/branches/{branch}/protection/required_signatures"],
     getCommunityProfileMetrics: ["GET /repos/{owner}/{repo}/community/profile"],
     getContent: ["GET /repos/{owner}/{repo}/contents/{path}"],
     getContributorsStats: ["GET /repos/{owner}/{repo}/stats/contributors"],
@@ -4682,6 +5043,7 @@ const Endpoints = {
     getLatestRelease: ["GET /repos/{owner}/{repo}/releases/latest"],
     getPages: ["GET /repos/{owner}/{repo}/pages"],
     getPagesBuild: ["GET /repos/{owner}/{repo}/pages/builds/{build_id}"],
+    getPagesHealthCheck: ["GET /repos/{owner}/{repo}/pages/health"],
     getParticipationStats: ["GET /repos/{owner}/{repo}/stats/participation"],
     getPullRequestReviewProtection: ["GET /repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews"],
     getPunchCardStats: ["GET /repos/{owner}/{repo}/stats/punch_card"],
@@ -4698,12 +5060,10 @@ const Endpoints = {
     getViews: ["GET /repos/{owner}/{repo}/traffic/views"],
     getWebhook: ["GET /repos/{owner}/{repo}/hooks/{hook_id}"],
     getWebhookConfigForRepo: ["GET /repos/{owner}/{repo}/hooks/{hook_id}/config"],
+    getWebhookDelivery: ["GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}"],
+    listAutolinks: ["GET /repos/{owner}/{repo}/autolinks"],
     listBranches: ["GET /repos/{owner}/{repo}/branches"],
-    listBranchesForHeadCommit: ["GET /repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head", {
-      mediaType: {
-        previews: ["groot"]
-      }
-    }],
+    listBranchesForHeadCommit: ["GET /repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head"],
     listCollaborators: ["GET /repos/{owner}/{repo}/collaborators"],
     listCommentsForCommit: ["GET /repos/{owner}/{repo}/commits/{commit_sha}/comments"],
     listCommitCommentsForRepo: ["GET /repos/{owner}/{repo}/comments"],
@@ -4722,18 +5082,18 @@ const Endpoints = {
     listLanguages: ["GET /repos/{owner}/{repo}/languages"],
     listPagesBuilds: ["GET /repos/{owner}/{repo}/pages/builds"],
     listPublic: ["GET /repositories"],
-    listPullRequestsAssociatedWithCommit: ["GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls", {
-      mediaType: {
-        previews: ["groot"]
-      }
-    }],
+    listPullRequestsAssociatedWithCommit: ["GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls"],
     listReleaseAssets: ["GET /repos/{owner}/{repo}/releases/{release_id}/assets"],
     listReleases: ["GET /repos/{owner}/{repo}/releases"],
+    listTagProtection: ["GET /repos/{owner}/{repo}/tags/protection"],
     listTags: ["GET /repos/{owner}/{repo}/tags"],
     listTeams: ["GET /repos/{owner}/{repo}/teams"],
+    listWebhookDeliveries: ["GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries"],
     listWebhooks: ["GET /repos/{owner}/{repo}/hooks"],
     merge: ["POST /repos/{owner}/{repo}/merges"],
+    mergeUpstream: ["POST /repos/{owner}/{repo}/merge-upstream"],
     pingWebhook: ["POST /repos/{owner}/{repo}/hooks/{hook_id}/pings"],
+    redeliverWebhookDelivery: ["POST /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts"],
     removeAppAccessRestrictions: ["DELETE /repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps", {}, {
       mapToData: "apps"
     }],
@@ -4749,11 +5109,7 @@ const Endpoints = {
       mapToData: "users"
     }],
     renameBranch: ["POST /repos/{owner}/{repo}/branches/{branch}/rename"],
-    replaceAllTopics: ["PUT /repos/{owner}/{repo}/topics", {
-      mediaType: {
-        previews: ["mercy"]
-      }
-    }],
+    replaceAllTopics: ["PUT /repos/{owner}/{repo}/topics"],
     requestPagesBuild: ["POST /repos/{owner}/{repo}/pages/builds"],
     setAdminBranchProtection: ["POST /repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins"],
     setAppAccessRestrictions: ["PUT /repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps", {}, {
@@ -4790,39 +5146,26 @@ const Endpoints = {
   },
   search: {
     code: ["GET /search/code"],
-    commits: ["GET /search/commits", {
-      mediaType: {
-        previews: ["cloak"]
-      }
-    }],
+    commits: ["GET /search/commits"],
     issuesAndPullRequests: ["GET /search/issues"],
     labels: ["GET /search/labels"],
     repos: ["GET /search/repositories"],
-    topics: ["GET /search/topics", {
-      mediaType: {
-        previews: ["mercy"]
-      }
-    }],
+    topics: ["GET /search/topics"],
     users: ["GET /search/users"]
   },
   secretScanning: {
     getAlert: ["GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}"],
+    listAlertsForEnterprise: ["GET /enterprises/{enterprise}/secret-scanning/alerts"],
+    listAlertsForOrg: ["GET /orgs/{org}/secret-scanning/alerts"],
     listAlertsForRepo: ["GET /repos/{owner}/{repo}/secret-scanning/alerts"],
+    listLocationsForAlert: ["GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations"],
     updateAlert: ["PATCH /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}"]
   },
   teams: {
     addOrUpdateMembershipForUserInOrg: ["PUT /orgs/{org}/teams/{team_slug}/memberships/{username}"],
-    addOrUpdateProjectPermissionsInOrg: ["PUT /orgs/{org}/teams/{team_slug}/projects/{project_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
+    addOrUpdateProjectPermissionsInOrg: ["PUT /orgs/{org}/teams/{team_slug}/projects/{project_id}"],
     addOrUpdateRepoPermissionsInOrg: ["PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"],
-    checkPermissionsForProjectInOrg: ["GET /orgs/{org}/teams/{team_slug}/projects/{project_id}", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
+    checkPermissionsForProjectInOrg: ["GET /orgs/{org}/teams/{team_slug}/projects/{project_id}"],
     checkPermissionsForRepoInOrg: ["GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"],
     create: ["POST /orgs/{org}/teams"],
     createDiscussionCommentInOrg: ["POST /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments"],
@@ -4841,11 +5184,7 @@ const Endpoints = {
     listForAuthenticatedUser: ["GET /user/teams"],
     listMembersInOrg: ["GET /orgs/{org}/teams/{team_slug}/members"],
     listPendingInvitationsInOrg: ["GET /orgs/{org}/teams/{team_slug}/invitations"],
-    listProjectsInOrg: ["GET /orgs/{org}/teams/{team_slug}/projects", {
-      mediaType: {
-        previews: ["inertia"]
-      }
-    }],
+    listProjectsInOrg: ["GET /orgs/{org}/teams/{team_slug}/projects"],
     listReposInOrg: ["GET /orgs/{org}/teams/{team_slug}/repos"],
     removeMembershipForUserInOrg: ["DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}"],
     removeProjectInOrg: ["DELETE /orgs/{org}/teams/{team_slug}/projects/{project_id}"],
@@ -4855,42 +5194,87 @@ const Endpoints = {
     updateInOrg: ["PATCH /orgs/{org}/teams/{team_slug}"]
   },
   users: {
-    addEmailForAuthenticated: ["POST /user/emails"],
+    addEmailForAuthenticated: ["POST /user/emails", {}, {
+      renamed: ["users", "addEmailForAuthenticatedUser"]
+    }],
+    addEmailForAuthenticatedUser: ["POST /user/emails"],
     block: ["PUT /user/blocks/{username}"],
     checkBlocked: ["GET /user/blocks/{username}"],
     checkFollowingForUser: ["GET /users/{username}/following/{target_user}"],
     checkPersonIsFollowedByAuthenticated: ["GET /user/following/{username}"],
-    createGpgKeyForAuthenticated: ["POST /user/gpg_keys"],
-    createPublicSshKeyForAuthenticated: ["POST /user/keys"],
-    deleteEmailForAuthenticated: ["DELETE /user/emails"],
-    deleteGpgKeyForAuthenticated: ["DELETE /user/gpg_keys/{gpg_key_id}"],
-    deletePublicSshKeyForAuthenticated: ["DELETE /user/keys/{key_id}"],
+    createGpgKeyForAuthenticated: ["POST /user/gpg_keys", {}, {
+      renamed: ["users", "createGpgKeyForAuthenticatedUser"]
+    }],
+    createGpgKeyForAuthenticatedUser: ["POST /user/gpg_keys"],
+    createPublicSshKeyForAuthenticated: ["POST /user/keys", {}, {
+      renamed: ["users", "createPublicSshKeyForAuthenticatedUser"]
+    }],
+    createPublicSshKeyForAuthenticatedUser: ["POST /user/keys"],
+    deleteEmailForAuthenticated: ["DELETE /user/emails", {}, {
+      renamed: ["users", "deleteEmailForAuthenticatedUser"]
+    }],
+    deleteEmailForAuthenticatedUser: ["DELETE /user/emails"],
+    deleteGpgKeyForAuthenticated: ["DELETE /user/gpg_keys/{gpg_key_id}", {}, {
+      renamed: ["users", "deleteGpgKeyForAuthenticatedUser"]
+    }],
+    deleteGpgKeyForAuthenticatedUser: ["DELETE /user/gpg_keys/{gpg_key_id}"],
+    deletePublicSshKeyForAuthenticated: ["DELETE /user/keys/{key_id}", {}, {
+      renamed: ["users", "deletePublicSshKeyForAuthenticatedUser"]
+    }],
+    deletePublicSshKeyForAuthenticatedUser: ["DELETE /user/keys/{key_id}"],
     follow: ["PUT /user/following/{username}"],
     getAuthenticated: ["GET /user"],
     getByUsername: ["GET /users/{username}"],
     getContextForUser: ["GET /users/{username}/hovercard"],
-    getGpgKeyForAuthenticated: ["GET /user/gpg_keys/{gpg_key_id}"],
-    getPublicSshKeyForAuthenticated: ["GET /user/keys/{key_id}"],
+    getGpgKeyForAuthenticated: ["GET /user/gpg_keys/{gpg_key_id}", {}, {
+      renamed: ["users", "getGpgKeyForAuthenticatedUser"]
+    }],
+    getGpgKeyForAuthenticatedUser: ["GET /user/gpg_keys/{gpg_key_id}"],
+    getPublicSshKeyForAuthenticated: ["GET /user/keys/{key_id}", {}, {
+      renamed: ["users", "getPublicSshKeyForAuthenticatedUser"]
+    }],
+    getPublicSshKeyForAuthenticatedUser: ["GET /user/keys/{key_id}"],
     list: ["GET /users"],
-    listBlockedByAuthenticated: ["GET /user/blocks"],
-    listEmailsForAuthenticated: ["GET /user/emails"],
-    listFollowedByAuthenticated: ["GET /user/following"],
+    listBlockedByAuthenticated: ["GET /user/blocks", {}, {
+      renamed: ["users", "listBlockedByAuthenticatedUser"]
+    }],
+    listBlockedByAuthenticatedUser: ["GET /user/blocks"],
+    listEmailsForAuthenticated: ["GET /user/emails", {}, {
+      renamed: ["users", "listEmailsForAuthenticatedUser"]
+    }],
+    listEmailsForAuthenticatedUser: ["GET /user/emails"],
+    listFollowedByAuthenticated: ["GET /user/following", {}, {
+      renamed: ["users", "listFollowedByAuthenticatedUser"]
+    }],
+    listFollowedByAuthenticatedUser: ["GET /user/following"],
     listFollowersForAuthenticatedUser: ["GET /user/followers"],
     listFollowersForUser: ["GET /users/{username}/followers"],
     listFollowingForUser: ["GET /users/{username}/following"],
-    listGpgKeysForAuthenticated: ["GET /user/gpg_keys"],
+    listGpgKeysForAuthenticated: ["GET /user/gpg_keys", {}, {
+      renamed: ["users", "listGpgKeysForAuthenticatedUser"]
+    }],
+    listGpgKeysForAuthenticatedUser: ["GET /user/gpg_keys"],
     listGpgKeysForUser: ["GET /users/{username}/gpg_keys"],
-    listPublicEmailsForAuthenticated: ["GET /user/public_emails"],
+    listPublicEmailsForAuthenticated: ["GET /user/public_emails", {}, {
+      renamed: ["users", "listPublicEmailsForAuthenticatedUser"]
+    }],
+    listPublicEmailsForAuthenticatedUser: ["GET /user/public_emails"],
     listPublicKeysForUser: ["GET /users/{username}/keys"],
-    listPublicSshKeysForAuthenticated: ["GET /user/keys"],
-    setPrimaryEmailVisibilityForAuthenticated: ["PATCH /user/email/visibility"],
+    listPublicSshKeysForAuthenticated: ["GET /user/keys", {}, {
+      renamed: ["users", "listPublicSshKeysForAuthenticatedUser"]
+    }],
+    listPublicSshKeysForAuthenticatedUser: ["GET /user/keys"],
+    setPrimaryEmailVisibilityForAuthenticated: ["PATCH /user/email/visibility", {}, {
+      renamed: ["users", "setPrimaryEmailVisibilityForAuthenticatedUser"]
+    }],
+    setPrimaryEmailVisibilityForAuthenticatedUser: ["PATCH /user/email/visibility"],
     unblock: ["DELETE /user/blocks/{username}"],
     unfollow: ["DELETE /user/following/{username}"],
     updateAuthenticated: ["PATCH /user"]
   }
 };
 
-const VERSION = "4.15.1";
+const VERSION = "5.16.2";
 
 function endpointsToMethods(octokit, endpointsMap) {
   const newMethods = {};
@@ -4975,12 +5359,20 @@ function decorate(octokit, scope, methodName, defaults, decorations) {
 
 function restEndpointMethods(octokit) {
   const api = endpointsToMethods(octokit, Endpoints);
+  return {
+    rest: api
+  };
+}
+restEndpointMethods.VERSION = VERSION;
+function legacyRestEndpointMethods(octokit) {
+  const api = endpointsToMethods(octokit, Endpoints);
   return _objectSpread2(_objectSpread2({}, api), {}, {
     rest: api
   });
 }
-restEndpointMethods.VERSION = VERSION;
+legacyRestEndpointMethods.VERSION = VERSION;
 
+exports.legacyRestEndpointMethods = legacyRestEndpointMethods;
 exports.restEndpointMethods = restEndpointMethods;
 //# sourceMappingURL=index.js.map
 
@@ -5085,7 +5477,7 @@ var isPlainObject = __webpack_require__(3287);
 var nodeFetch = _interopDefault(__webpack_require__(467));
 var requestError = __webpack_require__(537);
 
-const VERSION = "5.6.1";
+const VERSION = "5.6.3";
 
 function getBufferResponse(response) {
   return response.arrayBuffer();
@@ -5257,63 +5649,67 @@ exports.request = request;
 /***/ 3682:
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
-var register = __webpack_require__(4670)
-var addHook = __webpack_require__(5549)
-var removeHook = __webpack_require__(6819)
+var register = __webpack_require__(4670);
+var addHook = __webpack_require__(5549);
+var removeHook = __webpack_require__(6819);
 
 // bind with array of arguments: https://stackoverflow.com/a/21792913
-var bind = Function.bind
-var bindable = bind.bind(bind)
+var bind = Function.bind;
+var bindable = bind.bind(bind);
 
-function bindApi (hook, state, name) {
-  var removeHookRef = bindable(removeHook, null).apply(null, name ? [state, name] : [state])
-  hook.api = { remove: removeHookRef }
-  hook.remove = removeHookRef
-
-  ;['before', 'error', 'after', 'wrap'].forEach(function (kind) {
-    var args = name ? [state, kind, name] : [state, kind]
-    hook[kind] = hook.api[kind] = bindable(addHook, null).apply(null, args)
-  })
+function bindApi(hook, state, name) {
+  var removeHookRef = bindable(removeHook, null).apply(
+    null,
+    name ? [state, name] : [state]
+  );
+  hook.api = { remove: removeHookRef };
+  hook.remove = removeHookRef;
+  ["before", "error", "after", "wrap"].forEach(function (kind) {
+    var args = name ? [state, kind, name] : [state, kind];
+    hook[kind] = hook.api[kind] = bindable(addHook, null).apply(null, args);
+  });
 }
 
-function HookSingular () {
-  var singularHookName = 'h'
+function HookSingular() {
+  var singularHookName = "h";
   var singularHookState = {
-    registry: {}
-  }
-  var singularHook = register.bind(null, singularHookState, singularHookName)
-  bindApi(singularHook, singularHookState, singularHookName)
-  return singularHook
+    registry: {},
+  };
+  var singularHook = register.bind(null, singularHookState, singularHookName);
+  bindApi(singularHook, singularHookState, singularHookName);
+  return singularHook;
 }
 
-function HookCollection () {
+function HookCollection() {
   var state = {
-    registry: {}
-  }
+    registry: {},
+  };
 
-  var hook = register.bind(null, state)
-  bindApi(hook, state)
+  var hook = register.bind(null, state);
+  bindApi(hook, state);
 
-  return hook
+  return hook;
 }
 
-var collectionHookDeprecationMessageDisplayed = false
-function Hook () {
+var collectionHookDeprecationMessageDisplayed = false;
+function Hook() {
   if (!collectionHookDeprecationMessageDisplayed) {
-    console.warn('[before-after-hook]: "Hook()" repurposing warning, use "Hook.Collection()". Read more: https://git.io/upgrade-before-after-hook-to-1.4')
-    collectionHookDeprecationMessageDisplayed = true
+    console.warn(
+      '[before-after-hook]: "Hook()" repurposing warning, use "Hook.Collection()". Read more: https://git.io/upgrade-before-after-hook-to-1.4'
+    );
+    collectionHookDeprecationMessageDisplayed = true;
   }
-  return HookCollection()
+  return HookCollection();
 }
 
-Hook.Singular = HookSingular.bind()
-Hook.Collection = HookCollection.bind()
+Hook.Singular = HookSingular.bind();
+Hook.Collection = HookCollection.bind();
 
-module.exports = Hook
+module.exports = Hook;
 // expose constructors as a named property for TypeScript
-module.exports.Hook = Hook
-module.exports.Singular = Hook.Singular
-module.exports.Collection = Hook.Collection
+module.exports.Hook = Hook;
+module.exports.Singular = Hook.Singular;
+module.exports.Collection = Hook.Collection;
 
 
 /***/ }),
@@ -6653,7 +7049,7 @@ Object.defineProperty(Response.prototype, Symbol.toStringTag, {
 });
 
 const INTERNALS$2 = Symbol('Request internals');
-const URL = whatwgUrl.URL;
+const URL = Url.URL || whatwgUrl.URL;
 
 // fix an issue where "format", "parse" aren't a named export for node <10
 const parse_url = Url.parse;
@@ -6876,10 +7272,6 @@ function getNodeRequestOptions(request) {
 		agent = agent(parsedURL);
 	}
 
-	if (!headers.has('Connection') && !agent) {
-		headers.set('Connection', 'close');
-	}
-
 	// HTTP-network fetch step 4.2
 	// chunked encoding is handled by Node.js
 
@@ -6916,9 +7308,31 @@ AbortError.prototype = Object.create(Error.prototype);
 AbortError.prototype.constructor = AbortError;
 AbortError.prototype.name = 'AbortError';
 
+const URL$1 = Url.URL || whatwgUrl.URL;
+
 // fix an issue where "PassThrough", "resolve" aren't a named export for node <10
 const PassThrough$1 = Stream.PassThrough;
-const resolve_url = Url.resolve;
+
+const isDomainOrSubdomain = function isDomainOrSubdomain(destination, original) {
+	const orig = new URL$1(original).hostname;
+	const dest = new URL$1(destination).hostname;
+
+	return orig === dest || orig[orig.length - dest.length - 1] === '.' && orig.endsWith(dest);
+};
+
+/**
+ * isSameProtocol reports whether the two provided URLs use the same protocol.
+ *
+ * Both domains must already be in canonical form.
+ * @param {string|URL} original
+ * @param {string|URL} destination
+ */
+const isSameProtocol = function isSameProtocol(destination, original) {
+	const orig = new URL$1(original).protocol;
+	const dest = new URL$1(destination).protocol;
+
+	return orig === dest;
+};
 
 /**
  * Fetch function
@@ -6951,7 +7365,7 @@ function fetch(url, opts) {
 			let error = new AbortError('The user aborted a request.');
 			reject(error);
 			if (request.body && request.body instanceof Stream.Readable) {
-				request.body.destroy(error);
+				destroyStream(request.body, error);
 			}
 			if (!response || !response.body) return;
 			response.body.emit('error', error);
@@ -6992,8 +7406,42 @@ function fetch(url, opts) {
 
 		req.on('error', function (err) {
 			reject(new FetchError(`request to ${request.url} failed, reason: ${err.message}`, 'system', err));
+
+			if (response && response.body) {
+				destroyStream(response.body, err);
+			}
+
 			finalize();
 		});
+
+		fixResponseChunkedTransferBadEnding(req, function (err) {
+			if (signal && signal.aborted) {
+				return;
+			}
+
+			if (response && response.body) {
+				destroyStream(response.body, err);
+			}
+		});
+
+		/* c8 ignore next 18 */
+		if (parseInt(process.version.substring(1)) < 14) {
+			// Before Node.js 14, pipeline() does not fully support async iterators and does not always
+			// properly handle when the socket close/end events are out of order.
+			req.on('socket', function (s) {
+				s.addListener('close', function (hadError) {
+					// if a data listener is still present we didn't end cleanly
+					const hasDataListener = s.listenerCount('data') > 0;
+
+					// if end happened before close but the socket didn't emit an error, do it now
+					if (response && hasDataListener && !hadError && !(signal && signal.aborted)) {
+						const err = new Error('Premature close');
+						err.code = 'ERR_STREAM_PREMATURE_CLOSE';
+						response.body.emit('error', err);
+					}
+				});
+			});
+		}
 
 		req.on('response', function (res) {
 			clearTimeout(reqTimeout);
@@ -7006,7 +7454,19 @@ function fetch(url, opts) {
 				const location = headers.get('Location');
 
 				// HTTP fetch step 5.3
-				const locationURL = location === null ? null : resolve_url(request.url, location);
+				let locationURL = null;
+				try {
+					locationURL = location === null ? null : new URL$1(location, request.url).toString();
+				} catch (err) {
+					// error here can only be invalid URL in Location: header
+					// do not throw when options.redirect == manual
+					// let the user extract the errorneous redirect URL
+					if (request.redirect !== 'manual') {
+						reject(new FetchError(`uri requested responds with an invalid redirect URL: ${location}`, 'invalid-redirect'));
+						finalize();
+						return;
+					}
+				}
 
 				// HTTP fetch step 5.5
 				switch (request.redirect) {
@@ -7053,6 +7513,12 @@ function fetch(url, opts) {
 							timeout: request.timeout,
 							size: request.size
 						};
+
+						if (!isDomainOrSubdomain(request.url, locationURL) || !isSameProtocol(request.url, locationURL)) {
+							for (const name of ['authorization', 'www-authenticate', 'cookie', 'cookie2']) {
+								requestOpts.headers.delete(name);
+							}
+						}
 
 						// HTTP-redirect fetch step 9
 						if (res.statusCode !== 303 && request.body && getTotalBytes(request) === null) {
@@ -7141,6 +7607,13 @@ function fetch(url, opts) {
 					response = new Response(body, response_options);
 					resolve(response);
 				});
+				raw.on('end', function () {
+					// some old IIS servers return zero-length OK deflate responses, so 'data' is never emitted.
+					if (!response) {
+						response = new Response(body, response_options);
+						resolve(response);
+					}
+				});
 				return;
 			}
 
@@ -7160,6 +7633,44 @@ function fetch(url, opts) {
 		writeToStream(req, request);
 	});
 }
+function fixResponseChunkedTransferBadEnding(request, errorCallback) {
+	let socket;
+
+	request.on('socket', function (s) {
+		socket = s;
+	});
+
+	request.on('response', function (response) {
+		const headers = response.headers;
+
+		if (headers['transfer-encoding'] === 'chunked' && !headers['content-length']) {
+			response.once('close', function (hadError) {
+				// tests for socket presence, as in some situations the
+				// the 'socket' event is not triggered for the request
+				// (happens in deno), avoids `TypeError`
+				// if a data listener is still present we didn't end cleanly
+				const hasDataListener = socket && socket.listenerCount('data') > 0;
+
+				if (hasDataListener && !hadError) {
+					const err = new Error('Premature close');
+					err.code = 'ERR_STREAM_PREMATURE_CLOSE';
+					errorCallback(err);
+				}
+			});
+		}
+	});
+}
+
+function destroyStream(stream, err) {
+	if (stream.destroy) {
+		stream.destroy(err);
+	} else {
+		// node < 8
+		stream.emit('error', err);
+		stream.end();
+	}
+}
+
 /**
  * Redirect code matching
  *
@@ -9701,6 +10212,370 @@ exports.getUserAgent = getUserAgent;
 
 /***/ }),
 
+/***/ 9521:
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+// ESM COMPAT FLAG
+__webpack_require__.r(__webpack_exports__);
+
+// EXPORTS
+__webpack_require__.d(__webpack_exports__, {
+  "NIL": () => /* reexport */ nil,
+  "parse": () => /* reexport */ esm_node_parse,
+  "stringify": () => /* reexport */ esm_node_stringify,
+  "v1": () => /* reexport */ esm_node_v1,
+  "v3": () => /* reexport */ esm_node_v3,
+  "v4": () => /* reexport */ esm_node_v4,
+  "v5": () => /* reexport */ esm_node_v5,
+  "validate": () => /* reexport */ esm_node_validate,
+  "version": () => /* reexport */ esm_node_version
+});
+
+// CONCATENATED MODULE: external "crypto"
+const external_crypto_namespaceObject = require("crypto");;
+var external_crypto_default = /*#__PURE__*/__webpack_require__.n(external_crypto_namespaceObject);
+
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/rng.js
+
+const rnds8Pool = new Uint8Array(256); // # of random values to pre-allocate
+
+let poolPtr = rnds8Pool.length;
+function rng() {
+  if (poolPtr > rnds8Pool.length - 16) {
+    external_crypto_default().randomFillSync(rnds8Pool);
+    poolPtr = 0;
+  }
+
+  return rnds8Pool.slice(poolPtr, poolPtr += 16);
+}
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/regex.js
+/* harmony default export */ const regex = (/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000)$/i);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/validate.js
+
+
+function validate(uuid) {
+  return typeof uuid === 'string' && regex.test(uuid);
+}
+
+/* harmony default export */ const esm_node_validate = (validate);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/stringify.js
+
+/**
+ * Convert array of 16 byte values to UUID string format of the form:
+ * XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+ */
+
+const byteToHex = [];
+
+for (let i = 0; i < 256; ++i) {
+  byteToHex.push((i + 0x100).toString(16).substr(1));
+}
+
+function stringify(arr, offset = 0) {
+  // Note: Be careful editing this code!  It's been tuned for performance
+  // and works in ways you may not expect. See https://github.com/uuidjs/uuid/pull/434
+  const uuid = (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + '-' + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + '-' + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + '-' + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + '-' + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase(); // Consistency check for valid UUID.  If this throws, it's likely due to one
+  // of the following:
+  // - One or more input array values don't map to a hex octet (leading to
+  // "undefined" in the uuid)
+  // - Invalid input values for the RFC `version` or `variant` fields
+
+  if (!esm_node_validate(uuid)) {
+    throw TypeError('Stringified UUID is invalid');
+  }
+
+  return uuid;
+}
+
+/* harmony default export */ const esm_node_stringify = (stringify);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/v1.js
+
+ // **`v1()` - Generate time-based UUID**
+//
+// Inspired by https://github.com/LiosK/UUID.js
+// and http://docs.python.org/library/uuid.html
+
+let _nodeId;
+
+let _clockseq; // Previous uuid creation time
+
+
+let _lastMSecs = 0;
+let _lastNSecs = 0; // See https://github.com/uuidjs/uuid for API details
+
+function v1(options, buf, offset) {
+  let i = buf && offset || 0;
+  const b = buf || new Array(16);
+  options = options || {};
+  let node = options.node || _nodeId;
+  let clockseq = options.clockseq !== undefined ? options.clockseq : _clockseq; // node and clockseq need to be initialized to random values if they're not
+  // specified.  We do this lazily to minimize issues related to insufficient
+  // system entropy.  See #189
+
+  if (node == null || clockseq == null) {
+    const seedBytes = options.random || (options.rng || rng)();
+
+    if (node == null) {
+      // Per 4.5, create and 48-bit node id, (47 random bits + multicast bit = 1)
+      node = _nodeId = [seedBytes[0] | 0x01, seedBytes[1], seedBytes[2], seedBytes[3], seedBytes[4], seedBytes[5]];
+    }
+
+    if (clockseq == null) {
+      // Per 4.2.2, randomize (14 bit) clockseq
+      clockseq = _clockseq = (seedBytes[6] << 8 | seedBytes[7]) & 0x3fff;
+    }
+  } // UUID timestamps are 100 nano-second units since the Gregorian epoch,
+  // (1582-10-15 00:00).  JSNumbers aren't precise enough for this, so
+  // time is handled internally as 'msecs' (integer milliseconds) and 'nsecs'
+  // (100-nanoseconds offset from msecs) since unix epoch, 1970-01-01 00:00.
+
+
+  let msecs = options.msecs !== undefined ? options.msecs : Date.now(); // Per 4.2.1.2, use count of uuid's generated during the current clock
+  // cycle to simulate higher resolution clock
+
+  let nsecs = options.nsecs !== undefined ? options.nsecs : _lastNSecs + 1; // Time since last uuid creation (in msecs)
+
+  const dt = msecs - _lastMSecs + (nsecs - _lastNSecs) / 10000; // Per 4.2.1.2, Bump clockseq on clock regression
+
+  if (dt < 0 && options.clockseq === undefined) {
+    clockseq = clockseq + 1 & 0x3fff;
+  } // Reset nsecs if clock regresses (new clockseq) or we've moved onto a new
+  // time interval
+
+
+  if ((dt < 0 || msecs > _lastMSecs) && options.nsecs === undefined) {
+    nsecs = 0;
+  } // Per 4.2.1.2 Throw error if too many uuids are requested
+
+
+  if (nsecs >= 10000) {
+    throw new Error("uuid.v1(): Can't create more than 10M uuids/sec");
+  }
+
+  _lastMSecs = msecs;
+  _lastNSecs = nsecs;
+  _clockseq = clockseq; // Per 4.1.4 - Convert from unix epoch to Gregorian epoch
+
+  msecs += 12219292800000; // `time_low`
+
+  const tl = ((msecs & 0xfffffff) * 10000 + nsecs) % 0x100000000;
+  b[i++] = tl >>> 24 & 0xff;
+  b[i++] = tl >>> 16 & 0xff;
+  b[i++] = tl >>> 8 & 0xff;
+  b[i++] = tl & 0xff; // `time_mid`
+
+  const tmh = msecs / 0x100000000 * 10000 & 0xfffffff;
+  b[i++] = tmh >>> 8 & 0xff;
+  b[i++] = tmh & 0xff; // `time_high_and_version`
+
+  b[i++] = tmh >>> 24 & 0xf | 0x10; // include version
+
+  b[i++] = tmh >>> 16 & 0xff; // `clock_seq_hi_and_reserved` (Per 4.2.2 - include variant)
+
+  b[i++] = clockseq >>> 8 | 0x80; // `clock_seq_low`
+
+  b[i++] = clockseq & 0xff; // `node`
+
+  for (let n = 0; n < 6; ++n) {
+    b[i + n] = node[n];
+  }
+
+  return buf || esm_node_stringify(b);
+}
+
+/* harmony default export */ const esm_node_v1 = (v1);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/parse.js
+
+
+function parse(uuid) {
+  if (!esm_node_validate(uuid)) {
+    throw TypeError('Invalid UUID');
+  }
+
+  let v;
+  const arr = new Uint8Array(16); // Parse ########-....-....-....-............
+
+  arr[0] = (v = parseInt(uuid.slice(0, 8), 16)) >>> 24;
+  arr[1] = v >>> 16 & 0xff;
+  arr[2] = v >>> 8 & 0xff;
+  arr[3] = v & 0xff; // Parse ........-####-....-....-............
+
+  arr[4] = (v = parseInt(uuid.slice(9, 13), 16)) >>> 8;
+  arr[5] = v & 0xff; // Parse ........-....-####-....-............
+
+  arr[6] = (v = parseInt(uuid.slice(14, 18), 16)) >>> 8;
+  arr[7] = v & 0xff; // Parse ........-....-....-####-............
+
+  arr[8] = (v = parseInt(uuid.slice(19, 23), 16)) >>> 8;
+  arr[9] = v & 0xff; // Parse ........-....-....-....-############
+  // (Use "/" to avoid 32-bit truncation when bit-shifting high-order bytes)
+
+  arr[10] = (v = parseInt(uuid.slice(24, 36), 16)) / 0x10000000000 & 0xff;
+  arr[11] = v / 0x100000000 & 0xff;
+  arr[12] = v >>> 24 & 0xff;
+  arr[13] = v >>> 16 & 0xff;
+  arr[14] = v >>> 8 & 0xff;
+  arr[15] = v & 0xff;
+  return arr;
+}
+
+/* harmony default export */ const esm_node_parse = (parse);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/v35.js
+
+
+
+function stringToBytes(str) {
+  str = unescape(encodeURIComponent(str)); // UTF8 escape
+
+  const bytes = [];
+
+  for (let i = 0; i < str.length; ++i) {
+    bytes.push(str.charCodeAt(i));
+  }
+
+  return bytes;
+}
+
+const DNS = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+const URL = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
+/* harmony default export */ function v35(name, version, hashfunc) {
+  function generateUUID(value, namespace, buf, offset) {
+    if (typeof value === 'string') {
+      value = stringToBytes(value);
+    }
+
+    if (typeof namespace === 'string') {
+      namespace = esm_node_parse(namespace);
+    }
+
+    if (namespace.length !== 16) {
+      throw TypeError('Namespace must be array-like (16 iterable integer values, 0-255)');
+    } // Compute hash of namespace and value, Per 4.3
+    // Future: Use spread syntax when supported on all platforms, e.g. `bytes =
+    // hashfunc([...namespace, ... value])`
+
+
+    let bytes = new Uint8Array(16 + value.length);
+    bytes.set(namespace);
+    bytes.set(value, namespace.length);
+    bytes = hashfunc(bytes);
+    bytes[6] = bytes[6] & 0x0f | version;
+    bytes[8] = bytes[8] & 0x3f | 0x80;
+
+    if (buf) {
+      offset = offset || 0;
+
+      for (let i = 0; i < 16; ++i) {
+        buf[offset + i] = bytes[i];
+      }
+
+      return buf;
+    }
+
+    return esm_node_stringify(bytes);
+  } // Function#name is not settable on some platforms (#270)
+
+
+  try {
+    generateUUID.name = name; // eslint-disable-next-line no-empty
+  } catch (err) {} // For CommonJS default export support
+
+
+  generateUUID.DNS = DNS;
+  generateUUID.URL = URL;
+  return generateUUID;
+}
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/md5.js
+
+
+function md5(bytes) {
+  if (Array.isArray(bytes)) {
+    bytes = Buffer.from(bytes);
+  } else if (typeof bytes === 'string') {
+    bytes = Buffer.from(bytes, 'utf8');
+  }
+
+  return external_crypto_default().createHash('md5').update(bytes).digest();
+}
+
+/* harmony default export */ const esm_node_md5 = (md5);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/v3.js
+
+
+const v3 = v35('v3', 0x30, esm_node_md5);
+/* harmony default export */ const esm_node_v3 = (v3);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/v4.js
+
+
+
+function v4(options, buf, offset) {
+  options = options || {};
+  const rnds = options.random || (options.rng || rng)(); // Per 4.4, set bits for version and `clock_seq_hi_and_reserved`
+
+  rnds[6] = rnds[6] & 0x0f | 0x40;
+  rnds[8] = rnds[8] & 0x3f | 0x80; // Copy bytes to buffer, if provided
+
+  if (buf) {
+    offset = offset || 0;
+
+    for (let i = 0; i < 16; ++i) {
+      buf[offset + i] = rnds[i];
+    }
+
+    return buf;
+  }
+
+  return esm_node_stringify(rnds);
+}
+
+/* harmony default export */ const esm_node_v4 = (v4);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/sha1.js
+
+
+function sha1(bytes) {
+  if (Array.isArray(bytes)) {
+    bytes = Buffer.from(bytes);
+  } else if (typeof bytes === 'string') {
+    bytes = Buffer.from(bytes, 'utf8');
+  }
+
+  return external_crypto_default().createHash('sha1').update(bytes).digest();
+}
+
+/* harmony default export */ const esm_node_sha1 = (sha1);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/v5.js
+
+
+const v5 = v35('v5', 0x50, esm_node_sha1);
+/* harmony default export */ const esm_node_v5 = (v5);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/nil.js
+/* harmony default export */ const nil = ('00000000-0000-0000-0000-000000000000');
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/version.js
+
+
+function version(uuid) {
+  if (!esm_node_validate(uuid)) {
+    throw TypeError('Invalid UUID');
+  }
+
+  return parseInt(uuid.substr(14, 1), 16);
+}
+
+/* harmony default export */ const esm_node_version = (version);
+// CONCATENATED MODULE: ./node_modules/uuid/dist/esm-node/index.js
+
+
+
+
+
+
+
+
+
+
+/***/ }),
+
 /***/ 2940:
 /***/ ((module) => {
 
@@ -9747,41 +10622,53 @@ function wrappy (fn, cb) {
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var Scalar = __webpack_require__(8160);
+var YAMLMap = __webpack_require__(6761);
+var YAMLSeq = __webpack_require__(3810);
 var resolveBlockMap = __webpack_require__(6638);
 var resolveBlockSeq = __webpack_require__(2257);
 var resolveFlowCollection = __webpack_require__(6085);
 
-function composeCollection(CN, ctx, token, tagToken, onError) {
-    let coll;
-    switch (token.type) {
-        case 'block-map': {
-            coll = resolveBlockMap.resolveBlockMap(CN, ctx, token, onError);
-            break;
-        }
-        case 'block-seq': {
-            coll = resolveBlockSeq.resolveBlockSeq(CN, ctx, token, onError);
-            break;
-        }
-        case 'flow-collection': {
-            coll = resolveFlowCollection.resolveFlowCollection(CN, ctx, token, onError);
-            break;
-        }
-    }
-    if (!tagToken)
-        return coll;
-    const tagName = ctx.directives.tagName(tagToken.source, msg => onError(tagToken, 'TAG_RESOLVE_FAILED', msg));
-    if (!tagName)
-        return coll;
-    // Cast needed due to: https://github.com/Microsoft/TypeScript/issues/3841
+function resolveCollection(CN, ctx, token, onError, tagName, tag) {
+    const coll = token.type === 'block-map'
+        ? resolveBlockMap.resolveBlockMap(CN, ctx, token, onError, tag)
+        : token.type === 'block-seq'
+            ? resolveBlockSeq.resolveBlockSeq(CN, ctx, token, onError, tag)
+            : resolveFlowCollection.resolveFlowCollection(CN, ctx, token, onError, tag);
     const Coll = coll.constructor;
+    // If we got a tagName matching the class, or the tag name is '!',
+    // then use the tagName from the node class used to create it.
     if (tagName === '!' || tagName === Coll.tagName) {
         coll.tag = Coll.tagName;
         return coll;
     }
-    const expType = Node.isMap(coll) ? 'map' : 'seq';
-    let tag = ctx.schema.tags.find(t => t.collection === expType && t.tag === tagName);
+    if (tagName)
+        coll.tag = tagName;
+    return coll;
+}
+function composeCollection(CN, ctx, token, tagToken, onError) {
+    const tagName = !tagToken
+        ? null
+        : ctx.directives.tagName(tagToken.source, msg => onError(tagToken, 'TAG_RESOLVE_FAILED', msg));
+    const expType = token.type === 'block-map'
+        ? 'map'
+        : token.type === 'block-seq'
+            ? 'seq'
+            : token.start.source === '{'
+                ? 'map'
+                : 'seq';
+    // shortcut: check if it's a generic YAMLMap or YAMLSeq
+    // before jumping into the custom tag logic.
+    if (!tagToken ||
+        !tagName ||
+        tagName === '!' ||
+        (tagName === YAMLMap.YAMLMap.tagName && expType === 'map') ||
+        (tagName === YAMLSeq.YAMLSeq.tagName && expType === 'seq') ||
+        !expType) {
+        return resolveCollection(CN, ctx, token, onError, tagName);
+    }
+    let tag = ctx.schema.tags.find(t => t.tag === tagName && t.collection === expType);
     if (!tag) {
         const kt = ctx.schema.knownTags[tagName];
         if (kt && kt.collection === expType) {
@@ -9789,18 +10676,23 @@ function composeCollection(CN, ctx, token, tagToken, onError) {
             tag = kt;
         }
         else {
-            onError(tagToken, 'TAG_RESOLVE_FAILED', `Unresolved tag: ${tagName}`, true);
-            coll.tag = tagName;
-            return coll;
+            if (kt?.collection) {
+                onError(tagToken, 'BAD_COLLECTION_TYPE', `${kt.tag} used for ${expType} collection, but expects ${kt.collection}`, true);
+            }
+            else {
+                onError(tagToken, 'TAG_RESOLVE_FAILED', `Unresolved tag: ${tagName}`, true);
+            }
+            return resolveCollection(CN, ctx, token, onError, tagName);
         }
     }
-    const res = tag.resolve(coll, msg => onError(tagToken, 'TAG_RESOLVE_FAILED', msg), ctx.options);
-    const node = Node.isNode(res)
+    const coll = resolveCollection(CN, ctx, token, onError, tagName, tag);
+    const res = tag.resolve?.(coll, msg => onError(tagToken, 'TAG_RESOLVE_FAILED', msg), ctx.options) ?? coll;
+    const node = identity.isNode(res)
         ? res
         : new Scalar.Scalar(res);
     node.range = coll.range;
     node.tag = tagName;
-    if (tag === null || tag === void 0 ? void 0 : tag.format)
+    if (tag?.format)
         node.format = tag.format;
     return node;
 }
@@ -9822,27 +10714,29 @@ var resolveEnd = __webpack_require__(1789);
 var resolveProps = __webpack_require__(9663);
 
 function composeDoc(options, directives, { offset, start, value, end }, onError) {
-    const opts = Object.assign({ directives }, options);
+    const opts = Object.assign({ _directives: directives }, options);
     const doc = new Document.Document(undefined, opts);
     const ctx = {
+        atRoot: true,
         directives: doc.directives,
         options: doc.options,
         schema: doc.schema
     };
     const props = resolveProps.resolveProps(start, {
         indicator: 'doc-start',
-        next: value || (end === null || end === void 0 ? void 0 : end[0]),
+        next: value ?? end?.[0],
         offset,
         onError,
         startOnNewline: true
     });
     if (props.found) {
-        doc.directives.marker = true;
+        doc.directives.docStart = true;
         if (value &&
             (value.type === 'block-map' || value.type === 'block-seq') &&
             !props.hasNewline)
             onError(props.end, 'MISSING_CHAR', 'Block collection cannot start on same line with directives-end marker');
     }
+    // @ts-expect-error If Contents is set, let's trust the user
     doc.contents = value
         ? composeNode.composeNode(ctx, value, props, onError)
         : composeNode.composeEmptyNode(ctx, props.end, start, null, props, onError);
@@ -9875,6 +10769,7 @@ const CN = { composeNode, composeEmptyNode };
 function composeNode(ctx, token, props, onError) {
     const { spaceBefore, comment, anchor, tag } = props;
     let node;
+    let isSrcToken = true;
     switch (token.type) {
         case 'alias':
             node = composeAlias(ctx, token, onError);
@@ -9896,9 +10791,14 @@ function composeNode(ctx, token, props, onError) {
             if (anchor)
                 node.anchor = anchor.source.substring(1);
             break;
-        default:
-            console.log(token);
-            throw new Error(`Unsupporten token type: ${token.type}`);
+        default: {
+            const message = token.type === 'error'
+                ? token.message
+                : `Unsupported token (type: ${token.type})`;
+            onError(token, 'UNEXPECTED_TOKEN', message);
+            node = composeEmptyNode(ctx, token.offset, undefined, null, props, onError);
+            isSrcToken = false;
+        }
     }
     if (anchor && node.anchor === '')
         onError(anchor, 'BAD_ALIAS', 'Anchor cannot be an empty string');
@@ -9910,9 +10810,12 @@ function composeNode(ctx, token, props, onError) {
         else
             node.commentBefore = comment;
     }
+    // @ts-expect-error Type checking misses meaning of isSrcToken
+    if (ctx.options.keepSourceTokens && isSrcToken)
+        node.srcToken = token;
     return node;
 }
-function composeEmptyNode(ctx, offset, before, pos, { spaceBefore, comment, anchor, tag }, onError) {
+function composeEmptyNode(ctx, offset, before, pos, { spaceBefore, comment, anchor, tag, end }, onError) {
     const token = {
         type: 'scalar',
         offset: utilEmptyScalarPosition.emptyScalarPosition(offset, before, pos),
@@ -9927,14 +10830,18 @@ function composeEmptyNode(ctx, offset, before, pos, { spaceBefore, comment, anch
     }
     if (spaceBefore)
         node.spaceBefore = true;
-    if (comment)
+    if (comment) {
         node.comment = comment;
+        node.range[2] = end;
+    }
     return node;
 }
 function composeAlias({ options }, { offset, source, end }, onError) {
     const alias = new Alias.Alias(source.substring(1));
     if (alias.source === '')
         onError(offset, 'BAD_ALIAS', 'Alias cannot be an empty string');
+    if (alias.source.endsWith(':'))
+        onError(offset + source.length - 1, 'BAD_ALIAS', 'Alias ending in : is ambiguous', true);
     const valueEnd = offset + source.length;
     const re = resolveEnd.resolveEnd(end, valueEnd, options.strict, onError);
     alias.range = [offset, valueEnd, re.offset];
@@ -9955,7 +10862,7 @@ exports.composeNode = composeNode;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var Scalar = __webpack_require__(8160);
 var resolveBlockScalar = __webpack_require__(8172);
 var resolveFlowScalar = __webpack_require__(6390);
@@ -9969,15 +10876,17 @@ function composeScalar(ctx, token, tagToken, onError) {
         : null;
     const tag = tagToken && tagName
         ? findScalarTagByName(ctx.schema, value, tagName, tagToken, onError)
-        : findScalarTagByTest(ctx.schema, value, token.type === 'scalar');
+        : token.type === 'scalar'
+            ? findScalarTagByTest(ctx, value, token, onError)
+            : ctx.schema[identity.SCALAR];
     let scalar;
     try {
-        const res = tag.resolve(value, msg => onError(tagToken || token, 'TAG_RESOLVE_FAILED', msg), ctx.options);
-        scalar = Node.isScalar(res) ? res : new Scalar.Scalar(res);
+        const res = tag.resolve(value, msg => onError(tagToken ?? token, 'TAG_RESOLVE_FAILED', msg), ctx.options);
+        scalar = identity.isScalar(res) ? res : new Scalar.Scalar(res);
     }
     catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        onError(tagToken || token, 'TAG_RESOLVE_FAILED', msg);
+        onError(tagToken ?? token, 'TAG_RESOLVE_FAILED', msg);
         scalar = new Scalar.Scalar(value);
     }
     scalar.range = range;
@@ -9993,9 +10902,8 @@ function composeScalar(ctx, token, tagToken, onError) {
     return scalar;
 }
 function findScalarTagByName(schema, value, tagName, tagToken, onError) {
-    var _a;
     if (tagName === '!')
-        return schema[Node.SCALAR]; // non-specific tag
+        return schema[identity.SCALAR]; // non-specific tag
     const matchWithTest = [];
     for (const tag of schema.tags) {
         if (!tag.collection && tag.tag === tagName) {
@@ -10006,7 +10914,7 @@ function findScalarTagByName(schema, value, tagName, tagToken, onError) {
         }
     }
     for (const tag of matchWithTest)
-        if ((_a = tag.test) === null || _a === void 0 ? void 0 : _a.test(value))
+        if (tag.test?.test(value))
             return tag;
     const kt = schema.knownTags[tagName];
     if (kt && !kt.collection) {
@@ -10016,17 +10924,21 @@ function findScalarTagByName(schema, value, tagName, tagToken, onError) {
         return kt;
     }
     onError(tagToken, 'TAG_RESOLVE_FAILED', `Unresolved tag: ${tagName}`, tagName !== 'tag:yaml.org,2002:str');
-    return schema[Node.SCALAR];
+    return schema[identity.SCALAR];
 }
-function findScalarTagByTest(schema, value, apply) {
-    var _a;
-    if (apply) {
-        for (const tag of schema.tags) {
-            if (tag.default && ((_a = tag.test) === null || _a === void 0 ? void 0 : _a.test(value)))
-                return tag;
+function findScalarTagByTest({ directives, schema }, value, token, onError) {
+    const tag = schema.tags.find(tag => tag.default && tag.test?.test(value)) || schema[identity.SCALAR];
+    if (schema.compat) {
+        const compat = schema.compat.find(tag => tag.default && tag.test?.test(value)) ??
+            schema[identity.SCALAR];
+        if (tag.tag !== compat.tag) {
+            const ts = directives.tagString(tag.tag);
+            const cs = directives.tagString(compat.tag);
+            const msg = `Value may be parsed as either ${ts} or ${cs}`;
+            onError(token, 'TAG_RESOLVE_FAILED', msg, true);
         }
     }
-    return schema[Node.SCALAR];
+    return tag;
 }
 
 exports.composeScalar = composeScalar;
@@ -10043,8 +10955,7 @@ exports.composeScalar = composeScalar;
 var directives = __webpack_require__(8729);
 var Document = __webpack_require__(1785);
 var errors = __webpack_require__(3305);
-var Node = __webpack_require__(9752);
-var options = __webpack_require__(1501);
+var identity = __webpack_require__(7560);
 var composeDoc = __webpack_require__(9157);
 var resolveEnd = __webpack_require__(1789);
 
@@ -10057,7 +10968,6 @@ function getErrorPos(src) {
     return [offset, offset + (typeof source === 'string' ? source.length : 1)];
 }
 function parsePrelude(prelude) {
-    var _a;
     let comment = '';
     let atComment = false;
     let afterEmptyLine = false;
@@ -10072,7 +10982,7 @@ function parsePrelude(prelude) {
                 afterEmptyLine = false;
                 break;
             case '%':
-                if (((_a = prelude[i + 1]) === null || _a === void 0 ? void 0 : _a[0]) !== '#')
+                if (prelude[i + 1]?.[0] !== '#')
                     i += 1;
                 atComment = false;
                 break;
@@ -10097,7 +11007,7 @@ function parsePrelude(prelude) {
  * ```
  */
 class Composer {
-    constructor(options$1 = {}) {
+    constructor(options = {}) {
         this.doc = null;
         this.atDirectives = false;
         this.prelude = [];
@@ -10110,10 +11020,9 @@ class Composer {
             else
                 this.errors.push(new errors.YAMLParseError(pos, code, message));
         };
-        this.directives = new directives.Directives({
-            version: options$1.version || options.defaultOptions.version
-        });
-        this.options = options$1;
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+        this.directives = new directives.Directives({ version: options.version || '1.2' });
+        this.options = options;
     }
     decorate(doc, afterDoc) {
         const { comment, afterEmptyLine } = parsePrelude(this.prelude);
@@ -10123,12 +11032,12 @@ class Composer {
             if (afterDoc) {
                 doc.comment = doc.comment ? `${doc.comment}\n${comment}` : comment;
             }
-            else if (afterEmptyLine || doc.directives.marker || !dc) {
+            else if (afterEmptyLine || doc.directives.docStart || !dc) {
                 doc.commentBefore = comment;
             }
-            else if (Node.isCollection(dc) && !dc.flow && dc.items.length > 0) {
+            else if (identity.isCollection(dc) && !dc.flow && dc.items.length > 0) {
                 let it = dc.items[0];
-                if (Node.isPair(it))
+                if (identity.isPair(it))
                     it = it.key;
                 const cb = it.commentBefore;
                 it.commentBefore = cb ? `${comment}\n${cb}` : comment;
@@ -10190,8 +11099,8 @@ class Composer {
                 break;
             case 'document': {
                 const doc = composeDoc.composeDoc(this.options, this.directives, token, this.onError);
-                if (this.atDirectives && !doc.directives.marker)
-                    this.onError(token, 'MISSING_CHAR', 'Missing directives-end indicator line');
+                if (this.atDirectives && !doc.directives.docStart)
+                    this.onError(token, 'MISSING_CHAR', 'Missing directives-end/doc-start indicator line');
                 this.decorate(doc, false);
                 if (this.doc)
                     yield this.doc;
@@ -10223,6 +11132,7 @@ class Composer {
                     this.errors.push(new errors.YAMLParseError(getErrorPos(token), 'UNEXPECTED_TOKEN', msg));
                     break;
                 }
+                this.doc.directives.docEnd = true;
                 const end = resolveEnd.resolveEnd(token.end, token.offset + token.source.length, this.doc.options.strict, this.onError);
                 this.decorate(this.doc, true);
                 if (end.comment) {
@@ -10249,7 +11159,7 @@ class Composer {
             this.doc = null;
         }
         else if (forceDoc) {
-            const opts = Object.assign({ directives: this.directives }, this.options);
+            const opts = Object.assign({ _directives: this.directives }, this.options);
             const doc = new Document.Document(undefined, opts);
             if (this.atDirectives)
                 this.onError(endOffset, 'MISSING_CHAR', 'Missing directives-end indicator line');
@@ -10275,18 +11185,23 @@ var Pair = __webpack_require__(3497);
 var YAMLMap = __webpack_require__(6761);
 var resolveProps = __webpack_require__(9663);
 var utilContainsNewline = __webpack_require__(7801);
+var utilFlowIndentCheck = __webpack_require__(7013);
 var utilMapIncludes = __webpack_require__(379);
 
 const startColMsg = 'All mapping items must start at the same column';
-function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError) {
-    var _a;
-    const map = new YAMLMap.YAMLMap(ctx.schema);
+function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError, tag) {
+    const NodeClass = tag?.nodeClass ?? YAMLMap.YAMLMap;
+    const map = new NodeClass(ctx.schema);
+    if (ctx.atRoot)
+        ctx.atRoot = false;
     let offset = bm.offset;
-    for (const { start, key, sep, value } of bm.items) {
+    let commentEnd = null;
+    for (const collItem of bm.items) {
+        const { start, key, sep, value } = collItem;
         // key properties
         const keyProps = resolveProps.resolveProps(start, {
             indicator: 'explicit-key-ind',
-            next: key || (sep === null || sep === void 0 ? void 0 : sep[0]),
+            next: key ?? sep?.[0],
             offset,
             onError,
             startOnNewline: true
@@ -10300,7 +11215,7 @@ function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError) {
                     onError(offset, 'BAD_INDENT', startColMsg);
             }
             if (!keyProps.anchor && !keyProps.tag && !sep) {
-                // TODO: assert being at last item?
+                commentEnd = keyProps.end;
                 if (keyProps.comment) {
                     if (map.comment)
                         map.comment += '\n' + keyProps.comment;
@@ -10309,21 +11224,24 @@ function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError) {
                 }
                 continue;
             }
+            if (keyProps.hasNewlineAfterProp || utilContainsNewline.containsNewline(key)) {
+                onError(key ?? start[start.length - 1], 'MULTILINE_IMPLICIT_KEY', 'Implicit keys need to be on a single line');
+            }
         }
-        else if (((_a = keyProps.found) === null || _a === void 0 ? void 0 : _a.indent) !== bm.indent)
+        else if (keyProps.found?.indent !== bm.indent) {
             onError(offset, 'BAD_INDENT', startColMsg);
-        if (implicitKey && utilContainsNewline.containsNewline(key))
-            onError(key, // checked by containsNewline()
-            'MULTILINE_IMPLICIT_KEY', 'Implicit keys need to be on a single line');
+        }
         // key value
         const keyStart = keyProps.end;
         const keyNode = key
             ? composeNode(ctx, key, keyProps, onError)
             : composeEmptyNode(ctx, keyStart, start, null, keyProps, onError);
+        if (ctx.schema.compat)
+            utilFlowIndentCheck.flowIndentCheck(bm.indent, key, onError);
         if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
             onError(keyStart, 'DUPLICATE_KEY', 'Map keys must be unique');
         // value properties
-        const valueProps = resolveProps.resolveProps(sep || [], {
+        const valueProps = resolveProps.resolveProps(sep ?? [], {
             indicator: 'map-value-ind',
             next: value,
             offset: keyNode.range[2],
@@ -10333,7 +11251,7 @@ function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError) {
         offset = valueProps.end;
         if (valueProps.found) {
             if (implicitKey) {
-                if ((value === null || value === void 0 ? void 0 : value.type) === 'block-map' && !valueProps.hasNewline)
+                if (value?.type === 'block-map' && !valueProps.hasNewline)
                     onError(offset, 'BLOCK_AS_IMPLICIT_KEY', 'Nested mappings are not allowed in compact mappings');
                 if (ctx.options.strict &&
                     keyProps.start < valueProps.found.offset - 1024)
@@ -10343,8 +11261,13 @@ function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError) {
             const valueNode = value
                 ? composeNode(ctx, value, valueProps, onError)
                 : composeEmptyNode(ctx, offset, sep, null, valueProps, onError);
+            if (ctx.schema.compat)
+                utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
             offset = valueNode.range[2];
-            map.items.push(new Pair.Pair(keyNode, valueNode));
+            const pair = new Pair.Pair(keyNode, valueNode);
+            if (ctx.options.keepSourceTokens)
+                pair.srcToken = collItem;
+            map.items.push(pair);
         }
         else {
             // key with no value
@@ -10356,10 +11279,15 @@ function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError) {
                 else
                     keyNode.comment = valueProps.comment;
             }
-            map.items.push(new Pair.Pair(keyNode));
+            const pair = new Pair.Pair(keyNode);
+            if (ctx.options.keepSourceTokens)
+                pair.srcToken = collItem;
+            map.items.push(pair);
         }
     }
-    map.range = [bm.offset, offset, offset];
+    if (commentEnd && commentEnd < offset)
+        onError(commentEnd, 'IMPOSSIBLE', 'Map comment with trailing content');
+    map.range = [bm.offset, offset, commentEnd ?? offset];
     return map;
 }
 
@@ -10393,8 +11321,10 @@ function resolveBlockScalar(scalar, strict, onError) {
             break;
     }
     // shortcut for empty contents
-    if (!scalar.source || chompStart === 0) {
-        const value = header.chomp === '+' ? lines.map(line => line[0]).join('\n') : '';
+    if (chompStart === 0) {
+        const value = header.chomp === '+' && lines.length > 0
+            ? '\n'.repeat(Math.max(1, lines.length - 1))
+            : '';
         let end = start + header.length;
         if (scalar.source)
             end += scalar.source.length;
@@ -10421,6 +11351,11 @@ function resolveBlockScalar(scalar, strict, onError) {
             break;
         }
         offset += indent.length + content.length + 1;
+    }
+    // include trailing more-indented empty lines in content
+    for (let i = lines.length - 1; i >= chompStart; --i) {
+        if (lines[i][0].length > trimIndent)
+            chompStart = i + 1;
     }
     let value = '';
     let sep = '';
@@ -10551,7 +11486,9 @@ function splitLines(source) {
     const split = source.split(/\n( *)/);
     const first = split[0];
     const m = first.match(/^( *)/);
-    const line0 = m && m[1] ? [m[1], first.slice(m[1].length)] : ['', first];
+    const line0 = m?.[1]
+        ? [m[1], first.slice(m[1].length)]
+        : ['', first];
     const lines = [line0];
     for (let i = 1; i < split.length; i += 2)
         lines.push([split[i], split[i + 1]]);
@@ -10571,10 +11508,15 @@ exports.resolveBlockScalar = resolveBlockScalar;
 
 var YAMLSeq = __webpack_require__(3810);
 var resolveProps = __webpack_require__(9663);
+var utilFlowIndentCheck = __webpack_require__(7013);
 
-function resolveBlockSeq({ composeNode, composeEmptyNode }, ctx, bs, onError) {
-    const seq = new YAMLSeq.YAMLSeq(ctx.schema);
+function resolveBlockSeq({ composeNode, composeEmptyNode }, ctx, bs, onError, tag) {
+    const NodeClass = tag?.nodeClass ?? YAMLSeq.YAMLSeq;
+    const seq = new NodeClass(ctx.schema);
+    if (ctx.atRoot)
+        ctx.atRoot = false;
     let offset = bs.offset;
+    let commentEnd = null;
     for (const { start, value } of bs.items) {
         const props = resolveProps.resolveProps(start, {
             indicator: 'seq-item-ind',
@@ -10583,16 +11525,15 @@ function resolveBlockSeq({ composeNode, composeEmptyNode }, ctx, bs, onError) {
             onError,
             startOnNewline: true
         });
-        offset = props.end;
         if (!props.found) {
             if (props.anchor || props.tag || value) {
                 if (value && value.type === 'block-seq')
-                    onError(offset, 'BAD_INDENT', 'All sequence items must start at the same column');
+                    onError(props.end, 'BAD_INDENT', 'All sequence items must start at the same column');
                 else
                     onError(offset, 'MISSING_CHAR', 'Sequence item without - indicator');
             }
             else {
-                // TODO: assert being at last item?
+                commentEnd = props.end;
                 if (props.comment)
                     seq.comment = props.comment;
                 continue;
@@ -10600,11 +11541,13 @@ function resolveBlockSeq({ composeNode, composeEmptyNode }, ctx, bs, onError) {
         }
         const node = value
             ? composeNode(ctx, value, props, onError)
-            : composeEmptyNode(ctx, offset, start, null, props, onError);
+            : composeEmptyNode(ctx, props.end, start, null, props, onError);
+        if (ctx.schema.compat)
+            utilFlowIndentCheck.flowIndentCheck(bs.indent, value, onError);
         offset = node.range[2];
         seq.items.push(node);
     }
-    seq.range = [bs.offset, offset, offset];
+    seq.range = [bs.offset, offset, commentEnd ?? offset];
     return seq;
 }
 
@@ -10666,7 +11609,7 @@ exports.resolveEnd = resolveEnd;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var Pair = __webpack_require__(3497);
 var YAMLMap = __webpack_require__(6761);
 var YAMLSeq = __webpack_require__(3810);
@@ -10677,20 +11620,23 @@ var utilMapIncludes = __webpack_require__(379);
 
 const blockMsg = 'Block collections are not allowed within flow collections';
 const isBlock = (token) => token && (token.type === 'block-map' || token.type === 'block-seq');
-function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onError) {
+function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onError, tag) {
     const isMap = fc.start.source === '{';
     const fcName = isMap ? 'flow map' : 'flow sequence';
-    const coll = isMap
-        ? new YAMLMap.YAMLMap(ctx.schema)
-        : new YAMLSeq.YAMLSeq(ctx.schema);
+    const NodeClass = (tag?.nodeClass ?? (isMap ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq));
+    const coll = new NodeClass(ctx.schema);
     coll.flow = true;
-    let offset = fc.offset;
+    const atRoot = ctx.atRoot;
+    if (atRoot)
+        ctx.atRoot = false;
+    let offset = fc.offset + fc.start.source.length;
     for (let i = 0; i < fc.items.length; ++i) {
-        const { start, key, sep, value } = fc.items[i];
+        const collItem = fc.items[i];
+        const { start, key, sep, value } = collItem;
         const props = resolveProps.resolveProps(start, {
             flow: fcName,
             indicator: 'explicit-key-ind',
-            next: key || (sep === null || sep === void 0 ? void 0 : sep[0]),
+            next: key ?? sep?.[0],
             offset,
             onError,
             startOnNewline: false
@@ -10707,6 +11653,7 @@ function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onErr
                     else
                         coll.comment = props.comment;
                 }
+                offset = props.end;
                 continue;
             }
             if (!isMap && ctx.options.strict && utilContainsNewline.containsNewline(key))
@@ -10736,8 +11683,8 @@ function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onErr
                 }
                 if (prevItemComment) {
                     let prev = coll.items[coll.items.length - 1];
-                    if (Node.isPair(prev))
-                        prev = prev.value || prev.key;
+                    if (identity.isPair(prev))
+                        prev = prev.value ?? prev.key;
                     if (prev.comment)
                         prev.comment += '\n' + prevItemComment;
                     else
@@ -10767,7 +11714,7 @@ function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onErr
             if (isBlock(key))
                 onError(keyNode.range, 'BLOCK_IN_FLOW', blockMsg);
             // value properties
-            const valueProps = resolveProps.resolveProps(sep || [], {
+            const valueProps = resolveProps.resolveProps(sep ?? [], {
                 flow: fcName,
                 indicator: 'map-value-ind',
                 next: value,
@@ -10813,6 +11760,8 @@ function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onErr
                     keyNode.comment = valueProps.comment;
             }
             const pair = new Pair.Pair(keyNode, valueNode);
+            if (ctx.options.keepSourceTokens)
+                pair.srcToken = collItem;
             if (isMap) {
                 const map = coll;
                 if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
@@ -10834,7 +11783,11 @@ function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onErr
     if (ce && ce.source === expectedEnd)
         cePos = ce.offset + ce.source.length;
     else {
-        onError(offset + 1, 'MISSING_CHAR', `Expected ${fcName} to end with ${expectedEnd}`);
+        const name = fcName[0].toUpperCase() + fcName.substring(1);
+        const msg = atRoot
+            ? `${name} must end with a ${expectedEnd}`
+            : `${name} in block collection must be sufficiently indented and end with a ${expectedEnd}`;
+        onError(offset, atRoot ? 'MISSING_CHAR' : 'BAD_INDENT', msg);
         if (ce && ce.source.length !== 1)
             ee.unshift(ce);
     }
@@ -10978,7 +11931,7 @@ function foldLines(source) {
     const last = /[ \t]*(.*)/sy;
     last.lastIndex = pos;
     match = last.exec(source);
-    return res + sep + ((match && match[1]) || '');
+    return res + sep + (match?.[1] ?? '');
 }
 function doubleQuotedValue(source, onError) {
     let res = '';
@@ -11105,6 +12058,7 @@ function resolveProps(tokens, { flow, indicator, next, offset, onError, startOnN
     let comment = '';
     let commentSep = '';
     let hasNewline = false;
+    let hasNewlineAfterProp = false;
     let reqSpace = false;
     let anchor = null;
     let tag = null;
@@ -11154,11 +12108,15 @@ function resolveProps(tokens, { flow, indicator, next, offset, onError, startOnN
                     commentSep += token.source;
                 atNewline = true;
                 hasNewline = true;
+                if (anchor || tag)
+                    hasNewlineAfterProp = true;
                 hasSpace = true;
                 break;
             case 'anchor':
                 if (anchor)
                     onError(token, 'MULTIPLE_ANCHORS', 'A node can have at most one anchor');
+                if (token.source.endsWith(':'))
+                    onError(token.offset + token.source.length - 1, 'BAD_ALIAS', 'Anchor ending in : is ambiguous', true);
                 anchor = token;
                 if (start === null)
                     start = token.offset;
@@ -11181,6 +12139,8 @@ function resolveProps(tokens, { flow, indicator, next, offset, onError, startOnN
                 // Could here handle preceding comments differently
                 if (anchor || tag)
                     onError(token, 'BAD_PROP_ORDER', `Anchors and tags must be after the ${token.source} indicator`);
+                if (found)
+                    onError(token, 'UNEXPECTED_TOKEN', `Unexpected ${token.source} in ${flow ?? 'collection'}`);
                 found = token;
                 atNewline = false;
                 hasSpace = false;
@@ -11216,10 +12176,11 @@ function resolveProps(tokens, { flow, indicator, next, offset, onError, startOnN
         spaceBefore,
         comment,
         hasNewline,
+        hasNewlineAfterProp,
         anchor,
         tag,
         end,
-        start: start !== null && start !== void 0 ? start : end
+        start: start ?? end
     };
 }
 
@@ -11294,7 +12255,7 @@ function emptyScalarPosition(offset, before, pos) {
             // Technically, an empty scalar is immediately after the last non-empty
             // node, but it's more useful to place it after any whitespace.
             st = before[++i];
-            while ((st === null || st === void 0 ? void 0 : st.type) === 'space') {
+            while (st?.type === 'space') {
                 offset += st.source.length;
                 st = before[++i];
             }
@@ -11309,13 +12270,38 @@ exports.emptyScalarPosition = emptyScalarPosition;
 
 /***/ }),
 
+/***/ 7013:
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utilContainsNewline = __webpack_require__(7801);
+
+function flowIndentCheck(indent, fc, onError) {
+    if (fc?.type === 'flow-collection') {
+        const end = fc.end[0];
+        if (end.indent === indent &&
+            (end.source === ']' || end.source === '}') &&
+            utilContainsNewline.containsNewline(fc)) {
+            const msg = 'Flow end indicator should be more indented than parent';
+            onError(end, 'BAD_INDENT', msg, true);
+        }
+    }
+}
+
+exports.flowIndentCheck = flowIndentCheck;
+
+
+/***/ }),
+
 /***/ 379:
 /***/ ((__unused_webpack_module, exports, __webpack_require__) => {
 
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 
 function mapIncludes(ctx, items, search) {
     const { uniqueKeys } = ctx.options;
@@ -11324,8 +12310,8 @@ function mapIncludes(ctx, items, search) {
     const isEqual = typeof uniqueKeys === 'function'
         ? uniqueKeys
         : (a, b) => a === b ||
-            (Node.isScalar(a) &&
-                Node.isScalar(b) &&
+            (identity.isScalar(a) &&
+                identity.isScalar(b) &&
                 a.value === b.value &&
                 !(a.value === '<<' && ctx.schema.merge));
     return items.some(pair => isEqual(pair.key, search));
@@ -11344,12 +12330,10 @@ exports.mapIncludes = mapIncludes;
 
 var Alias = __webpack_require__(9712);
 var Collection = __webpack_require__(9797);
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var Pair = __webpack_require__(3497);
 var toJS = __webpack_require__(8842);
-var options = __webpack_require__(1501);
 var Schema = __webpack_require__(7425);
-var stringify = __webpack_require__(1922);
 var stringifyDocument = __webpack_require__(9615);
 var anchors = __webpack_require__(584);
 var applyReviver = __webpack_require__(9833);
@@ -11357,7 +12341,7 @@ var createNode = __webpack_require__(9807);
 var directives = __webpack_require__(8729);
 
 class Document {
-    constructor(value, replacer, options$1) {
+    constructor(value, replacer, options) {
         /** A comment before this Document */
         this.commentBefore = null;
         /** A comment immediately after this Document */
@@ -11366,31 +12350,37 @@ class Document {
         this.errors = [];
         /** Warnings encountered during parsing. */
         this.warnings = [];
-        Object.defineProperty(this, Node.NODE_TYPE, { value: Node.DOC });
+        Object.defineProperty(this, identity.NODE_TYPE, { value: identity.DOC });
         let _replacer = null;
         if (typeof replacer === 'function' || Array.isArray(replacer)) {
             _replacer = replacer;
         }
-        else if (options$1 === undefined && replacer) {
-            options$1 = replacer;
+        else if (options === undefined && replacer) {
+            options = replacer;
             replacer = undefined;
         }
-        const opt = Object.assign({}, options.defaultOptions, options$1);
+        const opt = Object.assign({
+            intAsBigInt: false,
+            keepSourceTokens: false,
+            logLevel: 'warn',
+            prettyErrors: true,
+            strict: true,
+            uniqueKeys: true,
+            version: '1.2'
+        }, options);
         this.options = opt;
         let { version } = opt;
-        if (options$1 === null || options$1 === void 0 ? void 0 : options$1.directives) {
-            this.directives = options$1.directives.atDocument();
+        if (options?._directives) {
+            this.directives = options._directives.atDocument();
             if (this.directives.yaml.explicit)
                 version = this.directives.yaml.version;
         }
         else
             this.directives = new directives.Directives({ version });
-        this.setSchema(version, options$1);
-        if (value === undefined)
-            this.contents = null;
-        else {
-            this.contents = this.createNode(value, _replacer, options$1);
-        }
+        this.setSchema(version, options);
+        // @ts-expect-error We can't really know that this matches Contents.
+        this.contents =
+            value === undefined ? null : this.createNode(value, _replacer, options);
     }
     /**
      * Create a deep copy of this Document and its contents.
@@ -11399,16 +12389,18 @@ class Document {
      */
     clone() {
         const copy = Object.create(Document.prototype, {
-            [Node.NODE_TYPE]: { value: Node.DOC }
+            [identity.NODE_TYPE]: { value: identity.DOC }
         });
         copy.commentBefore = this.commentBefore;
         copy.comment = this.comment;
         copy.errors = this.errors.slice();
         copy.warnings = this.warnings.slice();
         copy.options = Object.assign({}, this.options);
-        copy.directives = this.directives.clone();
+        if (this.directives)
+            copy.directives = this.directives.clone();
         copy.schema = this.schema.clone();
-        copy.contents = Node.isNode(this.contents)
+        // @ts-expect-error We can't really know that this matches Contents.
+        copy.contents = identity.isNode(this.contents)
             ? this.contents.clone(copy.schema)
             : this.contents;
         if (this.range)
@@ -11438,6 +12430,7 @@ class Document {
         if (!node.anchor) {
             const prev = anchors.anchorNames(this);
             node.anchor =
+                // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
                 !name || prev.has(name) ? anchors.findNewAnchor(name || 'a', prev) : name;
         }
         return new Alias.Alias(node.anchor);
@@ -11459,11 +12452,13 @@ class Document {
             options = replacer;
             replacer = undefined;
         }
-        const { aliasDuplicateObjects, anchorPrefix, flow, keepUndefined, onTagObj, tag } = options || {};
-        const { onAnchor, setAnchors, sourceObjects } = anchors.createNodeAnchors(this, anchorPrefix || 'a');
+        const { aliasDuplicateObjects, anchorPrefix, flow, keepUndefined, onTagObj, tag } = options ?? {};
+        const { onAnchor, setAnchors, sourceObjects } = anchors.createNodeAnchors(this, 
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+        anchorPrefix || 'a');
         const ctx = {
-            aliasDuplicateObjects: aliasDuplicateObjects !== null && aliasDuplicateObjects !== void 0 ? aliasDuplicateObjects : true,
-            keepUndefined: keepUndefined !== null && keepUndefined !== void 0 ? keepUndefined : false,
+            aliasDuplicateObjects: aliasDuplicateObjects ?? true,
+            keepUndefined: keepUndefined ?? false,
             onAnchor,
             onTagObj,
             replacer: _replacer,
@@ -11471,7 +12466,7 @@ class Document {
             sourceObjects
         };
         const node = createNode.createNode(value, tag, ctx);
-        if (flow && Node.isCollection(node))
+        if (flow && identity.isCollection(node))
             node.flow = true;
         setAnchors();
         return node;
@@ -11500,6 +12495,7 @@ class Document {
         if (Collection.isEmptyPath(path)) {
             if (this.contents == null)
                 return false;
+            // @ts-expect-error Presumed impossible if Strict extends false
             this.contents = null;
             return true;
         }
@@ -11513,7 +12509,7 @@ class Document {
      * `true` (collections are always returned intact).
      */
     get(key, keepScalar) {
-        return Node.isCollection(this.contents)
+        return identity.isCollection(this.contents)
             ? this.contents.get(key, keepScalar)
             : undefined;
     }
@@ -11524,10 +12520,10 @@ class Document {
      */
     getIn(path, keepScalar) {
         if (Collection.isEmptyPath(path))
-            return !keepScalar && Node.isScalar(this.contents)
+            return !keepScalar && identity.isScalar(this.contents)
                 ? this.contents.value
                 : this.contents;
-        return Node.isCollection(this.contents)
+        return identity.isCollection(this.contents)
             ? this.contents.getIn(path, keepScalar)
             : undefined;
     }
@@ -11535,7 +12531,7 @@ class Document {
      * Checks if the document includes a value with the key `key`.
      */
     has(key) {
-        return Node.isCollection(this.contents) ? this.contents.has(key) : false;
+        return identity.isCollection(this.contents) ? this.contents.has(key) : false;
     }
     /**
      * Checks if the document includes a value at `path`.
@@ -11543,7 +12539,7 @@ class Document {
     hasIn(path) {
         if (Collection.isEmptyPath(path))
             return this.contents !== undefined;
-        return Node.isCollection(this.contents) ? this.contents.hasIn(path) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path) : false;
     }
     /**
      * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -11551,6 +12547,7 @@ class Document {
      */
     set(key, value) {
         if (this.contents == null) {
+            // @ts-expect-error We can't really know that this matches Contents.
             this.contents = Collection.collectionFromPath(this.schema, [key], value);
         }
         else if (assertCollection(this.contents)) {
@@ -11562,9 +12559,12 @@ class Document {
      * boolean to add/remove the item from the set.
      */
     setIn(path, value) {
-        if (Collection.isEmptyPath(path))
+        if (Collection.isEmptyPath(path)) {
+            // @ts-expect-error We can't really know that this matches Contents.
             this.contents = value;
+        }
         else if (this.contents == null) {
+            // @ts-expect-error We can't really know that this matches Contents.
             this.contents = Collection.collectionFromPath(this.schema, Array.from(path), value);
         }
         else if (assertCollection(this.contents)) {
@@ -11573,26 +12573,48 @@ class Document {
     }
     /**
      * Change the YAML version and schema used by the document.
+     * A `null` version disables support for directives, explicit tags, anchors, and aliases.
+     * It also requires the `schema` option to be given as a `Schema` instance value.
      *
-     * Overrides all previously set schema options
+     * Overrides all previously set schema options.
      */
-    setSchema(version, options) {
-        let _options;
-        switch (String(version)) {
+    setSchema(version, options = {}) {
+        if (typeof version === 'number')
+            version = String(version);
+        let opt;
+        switch (version) {
             case '1.1':
-                this.directives.yaml.version = '1.1';
-                _options = Object.assign({ merge: true, resolveKnownTags: false, schema: 'yaml-1.1' }, options);
+                if (this.directives)
+                    this.directives.yaml.version = '1.1';
+                else
+                    this.directives = new directives.Directives({ version: '1.1' });
+                opt = { merge: true, resolveKnownTags: false, schema: 'yaml-1.1' };
                 break;
             case '1.2':
-                this.directives.yaml.version = '1.2';
-                _options = Object.assign({ merge: false, resolveKnownTags: true, schema: 'core' }, options);
+            case 'next':
+                if (this.directives)
+                    this.directives.yaml.version = version;
+                else
+                    this.directives = new directives.Directives({ version });
+                opt = { merge: false, resolveKnownTags: true, schema: 'core' };
+                break;
+            case null:
+                if (this.directives)
+                    delete this.directives;
+                opt = null;
                 break;
             default: {
                 const sv = JSON.stringify(version);
-                throw new Error(`Expected '1.1' or '1.2' as version, but found: ${sv}`);
+                throw new Error(`Expected '1.1', '1.2' or null as first argument, but found: ${sv}`);
             }
         }
-        this.schema = new Schema.Schema(_options);
+        // Not using `instanceof Schema` to allow for duck typing
+        if (options.schema instanceof Object)
+            this.schema = options.schema;
+        else if (opt)
+            this.schema = new Schema.Schema(Object.assign(opt, options));
+        else
+            throw new Error(`With a null YAML version, the { schema: Schema } option is required`);
     }
     // json & jsonArg are only used from toJSON()
     toJS({ json, jsonArg, mapAsMap, maxAliasCount, onAnchor, reviver } = {}) {
@@ -11602,10 +12624,9 @@ class Document {
             keep: !json,
             mapAsMap: mapAsMap === true,
             mapKeyWarned: false,
-            maxAliasCount: typeof maxAliasCount === 'number' ? maxAliasCount : 100,
-            stringify: stringify.stringify
+            maxAliasCount: typeof maxAliasCount === 'number' ? maxAliasCount : 100
         };
-        const res = toJS.toJS(this.contents, jsonArg || '', ctx);
+        const res = toJS.toJS(this.contents, jsonArg ?? '', ctx);
         if (typeof onAnchor === 'function')
             for (const { count, res } of ctx.anchors.values())
                 onAnchor(res, count);
@@ -11635,7 +12656,7 @@ class Document {
     }
 }
 function assertCollection(contents) {
-    if (Node.isCollection(contents))
+    if (identity.isCollection(contents))
         return true;
     throw new Error('Expected a YAML collection as document contents');
 }
@@ -11651,7 +12672,7 @@ exports.Document = Document;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var visit = __webpack_require__(8234);
 
 /**
@@ -11690,7 +12711,7 @@ function createNodeAnchors(doc, prefix) {
     const sourceObjects = new Map();
     let prevAnchors = null;
     return {
-        onAnchor(source) {
+        onAnchor: (source) => {
             aliasObjects.push(source);
             if (!prevAnchors)
                 prevAnchors = anchorNames(doc);
@@ -11703,12 +12724,12 @@ function createNodeAnchors(doc, prefix) {
          * of its child nodes are. This is why anchors are set only after all of
          * the nodes have been created.
          */
-        setAnchors() {
+        setAnchors: () => {
             for (const source of aliasObjects) {
                 const ref = sourceObjects.get(source);
                 if (typeof ref === 'object' &&
                     ref.anchor &&
-                    (Node.isScalar(ref.node) || Node.isCollection(ref.node))) {
+                    (identity.isScalar(ref.node) || identity.isCollection(ref.node))) {
                     ref.node.anchor = ref.anchor;
                 }
                 else {
@@ -11801,35 +12822,34 @@ exports.applyReviver = applyReviver;
 
 
 var Alias = __webpack_require__(9712);
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var Scalar = __webpack_require__(8160);
 
 const defaultTagPrefix = 'tag:yaml.org,2002:';
 function findTagObject(value, tagName, tags) {
     if (tagName) {
         const match = tags.filter(t => t.tag === tagName);
-        const tagObj = match.find(t => !t.format) || match[0];
+        const tagObj = match.find(t => !t.format) ?? match[0];
         if (!tagObj)
             throw new Error(`Tag ${tagName} not found`);
         return tagObj;
     }
-    return tags.find(t => t.identify && t.identify(value) && !t.format);
+    return tags.find(t => t.identify?.(value) && !t.format);
 }
 function createNode(value, tagName, ctx) {
-    var _a, _b;
-    if (Node.isDocument(value))
+    if (identity.isDocument(value))
         value = value.contents;
-    if (Node.isNode(value))
+    if (identity.isNode(value))
         return value;
-    if (Node.isPair(value)) {
-        const map = (_b = (_a = ctx.schema[Node.MAP]).createNode) === null || _b === void 0 ? void 0 : _b.call(_a, ctx.schema, null, ctx);
+    if (identity.isPair(value)) {
+        const map = ctx.schema[identity.MAP].createNode?.(ctx.schema, null, ctx);
         map.items.push(value);
         return map;
     }
     if (value instanceof String ||
         value instanceof Number ||
         value instanceof Boolean ||
-        (typeof BigInt === 'function' && value instanceof BigInt) // not supported everywhere
+        (typeof BigInt !== 'undefined' && value instanceof BigInt) // not supported everywhere
     ) {
         // https://tc39.es/ecma262/#sec-serializejsonproperty
         value = value.valueOf();
@@ -11850,12 +12870,14 @@ function createNode(value, tagName, ctx) {
             sourceObjects.set(value, ref);
         }
     }
-    if (tagName && tagName.startsWith('!!'))
+    if (tagName?.startsWith('!!'))
         tagName = defaultTagPrefix + tagName.slice(2);
     let tagObj = findTagObject(value, tagName, schema.tags);
     if (!tagObj) {
-        if (value && typeof value.toJSON === 'function')
+        if (value && typeof value.toJSON === 'function') {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             value = value.toJSON();
+        }
         if (!value || typeof value !== 'object') {
             const node = new Scalar.Scalar(value);
             if (ref)
@@ -11864,20 +12886,24 @@ function createNode(value, tagName, ctx) {
         }
         tagObj =
             value instanceof Map
-                ? schema[Node.MAP]
+                ? schema[identity.MAP]
                 : Symbol.iterator in Object(value)
-                    ? schema[Node.SEQ]
-                    : schema[Node.MAP];
+                    ? schema[identity.SEQ]
+                    : schema[identity.MAP];
     }
     if (onTagObj) {
         onTagObj(tagObj);
         delete ctx.onTagObj;
     }
-    const node = (tagObj === null || tagObj === void 0 ? void 0 : tagObj.createNode)
+    const node = tagObj?.createNode
         ? tagObj.createNode(ctx.schema, value, ctx)
-        : new Scalar.Scalar(value);
+        : typeof tagObj?.nodeClass?.from === 'function'
+            ? tagObj.nodeClass.from(ctx.schema, value, ctx)
+            : new Scalar.Scalar(value);
     if (tagName)
         node.tag = tagName;
+    else if (!tagObj.default)
+        node.tag = tagObj.tag;
     if (ref)
         ref.node = node;
     return node;
@@ -11894,7 +12920,7 @@ exports.createNode = createNode;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var visit = __webpack_require__(8234);
 
 const escapeChars = {
@@ -11912,13 +12938,15 @@ class Directives {
          * The directives-end/doc-start marker `---`. If `null`, a marker may still be
          * included in the document's stringified representation.
          */
-        this.marker = null;
+        this.docStart = null;
+        /** The doc-end marker `...`.  */
+        this.docEnd = false;
         this.yaml = Object.assign({}, Directives.defaultYaml, yaml);
         this.tags = Object.assign({}, Directives.defaultTags, tags);
     }
     clone() {
         const copy = new Directives(this.yaml, this.tags);
-        copy.marker = this.marker;
+        copy.docStart = this.docStart;
         return copy;
     }
     /**
@@ -11967,7 +12995,7 @@ class Directives {
             }
             case '%YAML': {
                 this.yaml.explicit = true;
-                if (parts.length < 1) {
+                if (parts.length !== 1) {
                     onError(0, '%YAML directive should contain exactly one part');
                     return false;
                 }
@@ -11977,7 +13005,8 @@ class Directives {
                     return true;
                 }
                 else {
-                    onError(6, `Unsupported YAML version ${version}`, true);
+                    const isValid = /^\d+\.\d+$/.test(version);
+                    onError(6, `Unsupported YAML version ${version}`, isValid);
                     return false;
                 }
             }
@@ -12037,10 +13066,10 @@ class Directives {
             : [];
         const tagEntries = Object.entries(this.tags);
         let tagNames;
-        if (doc && tagEntries.length > 0 && Node.isNode(doc.contents)) {
+        if (doc && tagEntries.length > 0 && identity.isNode(doc.contents)) {
             const tags = {};
             visit.visit(doc.contents, (_key, node) => {
-                if (Node.isNode(node) && node.tag)
+                if (identity.isNode(node) && node.tag)
                     tags[node.tag] = true;
             });
             tagNames = Object.keys(tags);
@@ -12119,7 +13148,7 @@ const prettifyError = (src, lc) => (error) => {
         let count = 1;
         const end = error.linePos[1];
         if (end && end.line === line && end.col > col) {
-            count = Math.min(end.col - col, 80 - ci);
+            count = Math.max(1, Math.min(end.col - col, 80 - ci));
         }
         const pointer = ' '.repeat(ci) + '^'.repeat(count);
         error.message += `:\n\n${lineStr}\n${pointer}\n`;
@@ -12145,12 +13174,11 @@ var Document = __webpack_require__(1785);
 var Schema = __webpack_require__(7425);
 var errors = __webpack_require__(3305);
 var Alias = __webpack_require__(9712);
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var Pair = __webpack_require__(3497);
 var Scalar = __webpack_require__(8160);
 var YAMLMap = __webpack_require__(6761);
 var YAMLSeq = __webpack_require__(3810);
-var options = __webpack_require__(1501);
 var cst = __webpack_require__(9726);
 var lexer = __webpack_require__(7263);
 var lineCounter = __webpack_require__(5748);
@@ -12167,19 +13195,18 @@ exports.YAMLError = errors.YAMLError;
 exports.YAMLParseError = errors.YAMLParseError;
 exports.YAMLWarning = errors.YAMLWarning;
 exports.Alias = Alias.Alias;
-exports.isAlias = Node.isAlias;
-exports.isCollection = Node.isCollection;
-exports.isDocument = Node.isDocument;
-exports.isMap = Node.isMap;
-exports.isNode = Node.isNode;
-exports.isPair = Node.isPair;
-exports.isScalar = Node.isScalar;
-exports.isSeq = Node.isSeq;
+exports.isAlias = identity.isAlias;
+exports.isCollection = identity.isCollection;
+exports.isDocument = identity.isDocument;
+exports.isMap = identity.isMap;
+exports.isNode = identity.isNode;
+exports.isPair = identity.isPair;
+exports.isScalar = identity.isScalar;
+exports.isSeq = identity.isSeq;
 exports.Pair = Pair.Pair;
 exports.Scalar = Scalar.Scalar;
 exports.YAMLMap = YAMLMap.YAMLMap;
 exports.YAMLSeq = YAMLSeq.YAMLSeq;
-exports.defaultOptions = options.defaultOptions;
 exports.CST = cst;
 exports.Lexer = lexer.Lexer;
 exports.LineCounter = lineCounter.LineCounter;
@@ -12189,6 +13216,7 @@ exports.parseAllDocuments = publicApi.parseAllDocuments;
 exports.parseDocument = publicApi.parseDocument;
 exports.stringify = publicApi.stringify;
 exports.visit = visit.visit;
+exports.visitAsync = visit.visitAsync;
 
 
 /***/ }),
@@ -12226,11 +13254,13 @@ exports.warn = warn;
 
 var anchors = __webpack_require__(584);
 var visit = __webpack_require__(8234);
+var identity = __webpack_require__(7560);
 var Node = __webpack_require__(9752);
+var toJS = __webpack_require__(8842);
 
 class Alias extends Node.NodeBase {
     constructor(source) {
-        super(Node.ALIAS);
+        super(identity.ALIAS);
         this.source = source;
         Object.defineProperty(this, 'tag', {
             set() {
@@ -12263,7 +13293,12 @@ class Alias extends Node.NodeBase {
             const msg = `Unresolved alias (the anchor must be set before the alias): ${this.source}`;
             throw new ReferenceError(msg);
         }
-        const data = anchors.get(source);
+        let data = anchors.get(source);
+        if (!data) {
+            // Resolve anchors for Node.prototype.toJS()
+            toJS.toJS(source, null, ctx);
+            data = anchors.get(source);
+        }
         /* istanbul ignore if */
         if (!data || data.res === undefined) {
             const msg = 'This should not happen: Alias anchor was not resolved?';
@@ -12295,12 +13330,12 @@ class Alias extends Node.NodeBase {
     }
 }
 function getAliasCount(doc, node, anchors) {
-    if (Node.isAlias(node)) {
+    if (identity.isAlias(node)) {
         const source = node.resolve(doc);
         const anchor = anchors && source && anchors.get(source);
         return anchor ? anchor.count * anchor.aliasCount : 0;
     }
-    else if (Node.isCollection(node)) {
+    else if (identity.isCollection(node)) {
         let count = 0;
         for (const item of node.items) {
             const c = getAliasCount(doc, item, anchors);
@@ -12309,7 +13344,7 @@ function getAliasCount(doc, node, anchors) {
         }
         return count;
     }
-    else if (Node.isPair(node)) {
+    else if (identity.isPair(node)) {
         const kc = getAliasCount(doc, node.key, anchors);
         const vc = getAliasCount(doc, node.value, anchors);
         return Math.max(kc, vc);
@@ -12329,6 +13364,7 @@ exports.Alias = Alias;
 
 
 var createNode = __webpack_require__(9807);
+var identity = __webpack_require__(7560);
 var Node = __webpack_require__(9752);
 
 function collectionFromPath(schema, path, value) {
@@ -12354,7 +13390,8 @@ function collectionFromPath(schema, path, value) {
         sourceObjects: new Map()
     });
 }
-// null, undefined, or an empty non-string iterable (e.g. [])
+// Type guard is intentionally a little wrong so as to be more useful,
+// as it does not cover untypable empty non-string iterables (e.g. []).
 const isEmptyPath = (path) => path == null ||
     (typeof path === 'object' && !!path[Symbol.iterator]().next().done);
 class Collection extends Node.NodeBase {
@@ -12376,7 +13413,7 @@ class Collection extends Node.NodeBase {
         const copy = Object.create(Object.getPrototypeOf(this), Object.getOwnPropertyDescriptors(this));
         if (schema)
             copy.schema = schema;
-        copy.items = copy.items.map(it => Node.isNode(it) || Node.isPair(it) ? it.clone(schema) : it);
+        copy.items = copy.items.map(it => identity.isNode(it) || identity.isPair(it) ? it.clone(schema) : it);
         if (this.range)
             copy.range = this.range.slice();
         return copy;
@@ -12392,7 +13429,7 @@ class Collection extends Node.NodeBase {
         else {
             const [key, ...rest] = path;
             const node = this.get(key, true);
-            if (Node.isCollection(node))
+            if (identity.isCollection(node))
                 node.addIn(rest, value);
             else if (node === undefined && this.schema)
                 this.set(key, collectionFromPath(this.schema, rest, value));
@@ -12404,11 +13441,12 @@ class Collection extends Node.NodeBase {
      * Removes a value from the collection.
      * @returns `true` if the item was found and removed.
      */
-    deleteIn([key, ...rest]) {
+    deleteIn(path) {
+        const [key, ...rest] = path;
         if (rest.length === 0)
             return this.delete(key);
         const node = this.get(key, true);
-        if (Node.isCollection(node))
+        if (identity.isCollection(node))
             return node.deleteIn(rest);
         else
             throw new Error(`Expected YAML collection at ${key}. Remaining path: ${rest}`);
@@ -12418,21 +13456,22 @@ class Collection extends Node.NodeBase {
      * scalar values from their surrounding node; to disable set `keepScalar` to
      * `true` (collections are always returned intact).
      */
-    getIn([key, ...rest], keepScalar) {
+    getIn(path, keepScalar) {
+        const [key, ...rest] = path;
         const node = this.get(key, true);
         if (rest.length === 0)
-            return !keepScalar && Node.isScalar(node) ? node.value : node;
+            return !keepScalar && identity.isScalar(node) ? node.value : node;
         else
-            return Node.isCollection(node) ? node.getIn(rest, keepScalar) : undefined;
+            return identity.isCollection(node) ? node.getIn(rest, keepScalar) : undefined;
     }
     hasAllNullValues(allowScalar) {
         return this.items.every(node => {
-            if (!Node.isPair(node))
+            if (!identity.isPair(node))
                 return false;
             const n = node.value;
             return (n == null ||
                 (allowScalar &&
-                    Node.isScalar(n) &&
+                    identity.isScalar(n) &&
                     n.value == null &&
                     !n.commentBefore &&
                     !n.comment &&
@@ -12442,23 +13481,25 @@ class Collection extends Node.NodeBase {
     /**
      * Checks if the collection includes a value with the key `key`.
      */
-    hasIn([key, ...rest]) {
+    hasIn(path) {
+        const [key, ...rest] = path;
         if (rest.length === 0)
             return this.has(key);
         const node = this.get(key, true);
-        return Node.isCollection(node) ? node.hasIn(rest) : false;
+        return identity.isCollection(node) ? node.hasIn(rest) : false;
     }
     /**
      * Sets a value in this collection. For `!!set`, `value` needs to be a
      * boolean to add/remove the item from the set.
      */
-    setIn([key, ...rest], value) {
+    setIn(path, value) {
+        const [key, ...rest] = path;
         if (rest.length === 0) {
             this.set(key, value);
         }
         else {
             const node = this.get(key, true);
-            if (Node.isCollection(node))
+            if (identity.isCollection(node))
                 node.setIn(rest, value);
             else if (node === undefined && this.schema)
                 this.set(key, collectionFromPath(this.schema, rest, value));
@@ -12477,6 +13518,528 @@ exports.isEmptyPath = isEmptyPath;
 /***/ }),
 
 /***/ 9752:
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+"use strict";
+
+
+var applyReviver = __webpack_require__(9833);
+var identity = __webpack_require__(7560);
+var toJS = __webpack_require__(8842);
+
+class NodeBase {
+    constructor(type) {
+        Object.defineProperty(this, identity.NODE_TYPE, { value: type });
+    }
+    /** Create a copy of this node.  */
+    clone() {
+        const copy = Object.create(Object.getPrototypeOf(this), Object.getOwnPropertyDescriptors(this));
+        if (this.range)
+            copy.range = this.range.slice();
+        return copy;
+    }
+    /** A plain JavaScript representation of this node. */
+    toJS(doc, { mapAsMap, maxAliasCount, onAnchor, reviver } = {}) {
+        if (!identity.isDocument(doc))
+            throw new TypeError('A document argument is required');
+        const ctx = {
+            anchors: new Map(),
+            doc,
+            keep: true,
+            mapAsMap: mapAsMap === true,
+            mapKeyWarned: false,
+            maxAliasCount: typeof maxAliasCount === 'number' ? maxAliasCount : 100
+        };
+        const res = toJS.toJS(this, '', ctx);
+        if (typeof onAnchor === 'function')
+            for (const { count, res } of ctx.anchors.values())
+                onAnchor(res, count);
+        return typeof reviver === 'function'
+            ? applyReviver.applyReviver(reviver, { '': res }, '', res)
+            : res;
+    }
+}
+
+exports.NodeBase = NodeBase;
+
+
+/***/ }),
+
+/***/ 3497:
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+"use strict";
+
+
+var createNode = __webpack_require__(9807);
+var stringifyPair = __webpack_require__(10);
+var addPairToJSMap = __webpack_require__(5193);
+var identity = __webpack_require__(7560);
+
+function createPair(key, value, ctx) {
+    const k = createNode.createNode(key, undefined, ctx);
+    const v = createNode.createNode(value, undefined, ctx);
+    return new Pair(k, v);
+}
+class Pair {
+    constructor(key, value = null) {
+        Object.defineProperty(this, identity.NODE_TYPE, { value: identity.PAIR });
+        this.key = key;
+        this.value = value;
+    }
+    clone(schema) {
+        let { key, value } = this;
+        if (identity.isNode(key))
+            key = key.clone(schema);
+        if (identity.isNode(value))
+            value = value.clone(schema);
+        return new Pair(key, value);
+    }
+    toJSON(_, ctx) {
+        const pair = ctx?.mapAsMap ? new Map() : {};
+        return addPairToJSMap.addPairToJSMap(ctx, pair, this);
+    }
+    toString(ctx, onComment, onChompKeep) {
+        return ctx?.doc
+            ? stringifyPair.stringifyPair(this, ctx, onComment, onChompKeep)
+            : JSON.stringify(this);
+    }
+}
+
+exports.Pair = Pair;
+exports.createPair = createPair;
+
+
+/***/ }),
+
+/***/ 8160:
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+"use strict";
+
+
+var identity = __webpack_require__(7560);
+var Node = __webpack_require__(9752);
+var toJS = __webpack_require__(8842);
+
+const isScalarValue = (value) => !value || (typeof value !== 'function' && typeof value !== 'object');
+class Scalar extends Node.NodeBase {
+    constructor(value) {
+        super(identity.SCALAR);
+        this.value = value;
+    }
+    toJSON(arg, ctx) {
+        return ctx?.keep ? this.value : toJS.toJS(this.value, arg, ctx);
+    }
+    toString() {
+        return String(this.value);
+    }
+}
+Scalar.BLOCK_FOLDED = 'BLOCK_FOLDED';
+Scalar.BLOCK_LITERAL = 'BLOCK_LITERAL';
+Scalar.PLAIN = 'PLAIN';
+Scalar.QUOTE_DOUBLE = 'QUOTE_DOUBLE';
+Scalar.QUOTE_SINGLE = 'QUOTE_SINGLE';
+
+exports.Scalar = Scalar;
+exports.isScalarValue = isScalarValue;
+
+
+/***/ }),
+
+/***/ 6761:
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+"use strict";
+
+
+var stringifyCollection = __webpack_require__(3541);
+var addPairToJSMap = __webpack_require__(5193);
+var Collection = __webpack_require__(9797);
+var identity = __webpack_require__(7560);
+var Pair = __webpack_require__(3497);
+var Scalar = __webpack_require__(8160);
+
+function findPair(items, key) {
+    const k = identity.isScalar(key) ? key.value : key;
+    for (const it of items) {
+        if (identity.isPair(it)) {
+            if (it.key === key || it.key === k)
+                return it;
+            if (identity.isScalar(it.key) && it.key.value === k)
+                return it;
+        }
+    }
+    return undefined;
+}
+class YAMLMap extends Collection.Collection {
+    static get tagName() {
+        return 'tag:yaml.org,2002:map';
+    }
+    constructor(schema) {
+        super(identity.MAP, schema);
+        this.items = [];
+    }
+    /**
+     * A generic collection parsing method that can be extended
+     * to other node classes that inherit from YAMLMap
+     */
+    static from(schema, obj, ctx) {
+        const { keepUndefined, replacer } = ctx;
+        const map = new this(schema);
+        const add = (key, value) => {
+            if (typeof replacer === 'function')
+                value = replacer.call(obj, key, value);
+            else if (Array.isArray(replacer) && !replacer.includes(key))
+                return;
+            if (value !== undefined || keepUndefined)
+                map.items.push(Pair.createPair(key, value, ctx));
+        };
+        if (obj instanceof Map) {
+            for (const [key, value] of obj)
+                add(key, value);
+        }
+        else if (obj && typeof obj === 'object') {
+            for (const key of Object.keys(obj))
+                add(key, obj[key]);
+        }
+        if (typeof schema.sortMapEntries === 'function') {
+            map.items.sort(schema.sortMapEntries);
+        }
+        return map;
+    }
+    /**
+     * Adds a value to the collection.
+     *
+     * @param overwrite - If not set `true`, using a key that is already in the
+     *   collection will throw. Otherwise, overwrites the previous value.
+     */
+    add(pair, overwrite) {
+        let _pair;
+        if (identity.isPair(pair))
+            _pair = pair;
+        else if (!pair || typeof pair !== 'object' || !('key' in pair)) {
+            // In TypeScript, this never happens.
+            _pair = new Pair.Pair(pair, pair?.value);
+        }
+        else
+            _pair = new Pair.Pair(pair.key, pair.value);
+        const prev = findPair(this.items, _pair.key);
+        const sortEntries = this.schema?.sortMapEntries;
+        if (prev) {
+            if (!overwrite)
+                throw new Error(`Key ${_pair.key} already set`);
+            // For scalars, keep the old node & its comments and anchors
+            if (identity.isScalar(prev.value) && Scalar.isScalarValue(_pair.value))
+                prev.value.value = _pair.value;
+            else
+                prev.value = _pair.value;
+        }
+        else if (sortEntries) {
+            const i = this.items.findIndex(item => sortEntries(_pair, item) < 0);
+            if (i === -1)
+                this.items.push(_pair);
+            else
+                this.items.splice(i, 0, _pair);
+        }
+        else {
+            this.items.push(_pair);
+        }
+    }
+    delete(key) {
+        const it = findPair(this.items, key);
+        if (!it)
+            return false;
+        const del = this.items.splice(this.items.indexOf(it), 1);
+        return del.length > 0;
+    }
+    get(key, keepScalar) {
+        const it = findPair(this.items, key);
+        const node = it?.value;
+        return (!keepScalar && identity.isScalar(node) ? node.value : node) ?? undefined;
+    }
+    has(key) {
+        return !!findPair(this.items, key);
+    }
+    set(key, value) {
+        this.add(new Pair.Pair(key, value), true);
+    }
+    /**
+     * @param ctx - Conversion context, originally set in Document#toJS()
+     * @param {Class} Type - If set, forces the returned collection type
+     * @returns Instance of Type, Map, or Object
+     */
+    toJSON(_, ctx, Type) {
+        const map = Type ? new Type() : ctx?.mapAsMap ? new Map() : {};
+        if (ctx?.onCreate)
+            ctx.onCreate(map);
+        for (const item of this.items)
+            addPairToJSMap.addPairToJSMap(ctx, map, item);
+        return map;
+    }
+    toString(ctx, onComment, onChompKeep) {
+        if (!ctx)
+            return JSON.stringify(this);
+        for (const item of this.items) {
+            if (!identity.isPair(item))
+                throw new Error(`Map items must all be pairs; found ${JSON.stringify(item)} instead`);
+        }
+        if (!ctx.allNullValues && this.hasAllNullValues(false))
+            ctx = Object.assign({}, ctx, { allNullValues: true });
+        return stringifyCollection.stringifyCollection(this, ctx, {
+            blockItemPrefix: '',
+            flowChars: { start: '{', end: '}' },
+            itemIndent: ctx.indent || '',
+            onChompKeep,
+            onComment
+        });
+    }
+}
+
+exports.YAMLMap = YAMLMap;
+exports.findPair = findPair;
+
+
+/***/ }),
+
+/***/ 3810:
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+"use strict";
+
+
+var createNode = __webpack_require__(9807);
+var stringifyCollection = __webpack_require__(3541);
+var Collection = __webpack_require__(9797);
+var identity = __webpack_require__(7560);
+var Scalar = __webpack_require__(8160);
+var toJS = __webpack_require__(8842);
+
+class YAMLSeq extends Collection.Collection {
+    static get tagName() {
+        return 'tag:yaml.org,2002:seq';
+    }
+    constructor(schema) {
+        super(identity.SEQ, schema);
+        this.items = [];
+    }
+    add(value) {
+        this.items.push(value);
+    }
+    /**
+     * Removes a value from the collection.
+     *
+     * `key` must contain a representation of an integer for this to succeed.
+     * It may be wrapped in a `Scalar`.
+     *
+     * @returns `true` if the item was found and removed.
+     */
+    delete(key) {
+        const idx = asItemIndex(key);
+        if (typeof idx !== 'number')
+            return false;
+        const del = this.items.splice(idx, 1);
+        return del.length > 0;
+    }
+    get(key, keepScalar) {
+        const idx = asItemIndex(key);
+        if (typeof idx !== 'number')
+            return undefined;
+        const it = this.items[idx];
+        return !keepScalar && identity.isScalar(it) ? it.value : it;
+    }
+    /**
+     * Checks if the collection includes a value with the key `key`.
+     *
+     * `key` must contain a representation of an integer for this to succeed.
+     * It may be wrapped in a `Scalar`.
+     */
+    has(key) {
+        const idx = asItemIndex(key);
+        return typeof idx === 'number' && idx < this.items.length;
+    }
+    /**
+     * Sets a value in this collection. For `!!set`, `value` needs to be a
+     * boolean to add/remove the item from the set.
+     *
+     * If `key` does not contain a representation of an integer, this will throw.
+     * It may be wrapped in a `Scalar`.
+     */
+    set(key, value) {
+        const idx = asItemIndex(key);
+        if (typeof idx !== 'number')
+            throw new Error(`Expected a valid index, not ${key}.`);
+        const prev = this.items[idx];
+        if (identity.isScalar(prev) && Scalar.isScalarValue(value))
+            prev.value = value;
+        else
+            this.items[idx] = value;
+    }
+    toJSON(_, ctx) {
+        const seq = [];
+        if (ctx?.onCreate)
+            ctx.onCreate(seq);
+        let i = 0;
+        for (const item of this.items)
+            seq.push(toJS.toJS(item, String(i++), ctx));
+        return seq;
+    }
+    toString(ctx, onComment, onChompKeep) {
+        if (!ctx)
+            return JSON.stringify(this);
+        return stringifyCollection.stringifyCollection(this, ctx, {
+            blockItemPrefix: '- ',
+            flowChars: { start: '[', end: ']' },
+            itemIndent: (ctx.indent || '') + '  ',
+            onChompKeep,
+            onComment
+        });
+    }
+    static from(schema, obj, ctx) {
+        const { replacer } = ctx;
+        const seq = new this(schema);
+        if (obj && Symbol.iterator in Object(obj)) {
+            let i = 0;
+            for (let it of obj) {
+                if (typeof replacer === 'function') {
+                    const key = obj instanceof Set ? it : String(i++);
+                    it = replacer.call(obj, key, it);
+                }
+                seq.items.push(createNode.createNode(it, undefined, ctx));
+            }
+        }
+        return seq;
+    }
+}
+function asItemIndex(key) {
+    let idx = identity.isScalar(key) ? key.value : key;
+    if (idx && typeof idx === 'string')
+        idx = Number(idx);
+    return typeof idx === 'number' && Number.isInteger(idx) && idx >= 0
+        ? idx
+        : null;
+}
+
+exports.YAMLSeq = YAMLSeq;
+
+
+/***/ }),
+
+/***/ 5193:
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+"use strict";
+
+
+var log = __webpack_require__(469);
+var stringify = __webpack_require__(1922);
+var identity = __webpack_require__(7560);
+var Scalar = __webpack_require__(8160);
+var toJS = __webpack_require__(8842);
+
+const MERGE_KEY = '<<';
+function addPairToJSMap(ctx, map, { key, value }) {
+    if (ctx?.doc.schema.merge && isMergeKey(key)) {
+        value = identity.isAlias(value) ? value.resolve(ctx.doc) : value;
+        if (identity.isSeq(value))
+            for (const it of value.items)
+                mergeToJSMap(ctx, map, it);
+        else if (Array.isArray(value))
+            for (const it of value)
+                mergeToJSMap(ctx, map, it);
+        else
+            mergeToJSMap(ctx, map, value);
+    }
+    else {
+        const jsKey = toJS.toJS(key, '', ctx);
+        if (map instanceof Map) {
+            map.set(jsKey, toJS.toJS(value, jsKey, ctx));
+        }
+        else if (map instanceof Set) {
+            map.add(jsKey);
+        }
+        else {
+            const stringKey = stringifyKey(key, jsKey, ctx);
+            const jsValue = toJS.toJS(value, stringKey, ctx);
+            if (stringKey in map)
+                Object.defineProperty(map, stringKey, {
+                    value: jsValue,
+                    writable: true,
+                    enumerable: true,
+                    configurable: true
+                });
+            else
+                map[stringKey] = jsValue;
+        }
+    }
+    return map;
+}
+const isMergeKey = (key) => key === MERGE_KEY ||
+    (identity.isScalar(key) &&
+        key.value === MERGE_KEY &&
+        (!key.type || key.type === Scalar.Scalar.PLAIN));
+// If the value associated with a merge key is a single mapping node, each of
+// its key/value pairs is inserted into the current mapping, unless the key
+// already exists in it. If the value associated with the merge key is a
+// sequence, then this sequence is expected to contain mapping nodes and each
+// of these nodes is merged in turn according to its order in the sequence.
+// Keys in mapping nodes earlier in the sequence override keys specified in
+// later mapping nodes. -- http://yaml.org/type/merge.html
+function mergeToJSMap(ctx, map, value) {
+    const source = ctx && identity.isAlias(value) ? value.resolve(ctx.doc) : value;
+    if (!identity.isMap(source))
+        throw new Error('Merge sources must be maps or map aliases');
+    const srcMap = source.toJSON(null, ctx, Map);
+    for (const [key, value] of srcMap) {
+        if (map instanceof Map) {
+            if (!map.has(key))
+                map.set(key, value);
+        }
+        else if (map instanceof Set) {
+            map.add(key);
+        }
+        else if (!Object.prototype.hasOwnProperty.call(map, key)) {
+            Object.defineProperty(map, key, {
+                value,
+                writable: true,
+                enumerable: true,
+                configurable: true
+            });
+        }
+    }
+    return map;
+}
+function stringifyKey(key, jsKey, ctx) {
+    if (jsKey === null)
+        return '';
+    if (typeof jsKey !== 'object')
+        return String(jsKey);
+    if (identity.isNode(key) && ctx && ctx.doc) {
+        const strCtx = stringify.createStringifyContext(ctx.doc, {});
+        strCtx.anchors = new Set();
+        for (const node of ctx.anchors.keys())
+            strCtx.anchors.add(node.anchor);
+        strCtx.inFlow = true;
+        strCtx.inStringifyKey = true;
+        const strKey = key.toString(strCtx);
+        if (!ctx.mapKeyWarned) {
+            let jsonStr = JSON.stringify(strKey);
+            if (jsonStr.length > 40)
+                jsonStr = jsonStr.substring(0, 36) + '..."';
+            log.warn(ctx.doc.options.logLevel, `Keys with collection values will be stringified due to JS Object restrictions: ${jsonStr}. Set mapAsMap: true to use object keys.`);
+            ctx.mapKeyWarned = true;
+        }
+        return strKey;
+    }
+    return JSON.stringify(jsKey);
+}
+
+exports.addPairToJSMap = addPairToJSMap;
+
+
+/***/ }),
+
+/***/ 7560:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -12516,24 +14079,11 @@ function isNode(node) {
     return false;
 }
 const hasAnchor = (node) => (isScalar(node) || isCollection(node)) && !!node.anchor;
-class NodeBase {
-    constructor(type) {
-        Object.defineProperty(this, NODE_TYPE, { value: type });
-    }
-    /** Create a copy of this node.  */
-    clone() {
-        const copy = Object.create(Object.getPrototypeOf(this), Object.getOwnPropertyDescriptors(this));
-        if (this.range)
-            copy.range = this.range.slice();
-        return copy;
-    }
-}
 
 exports.ALIAS = ALIAS;
 exports.DOC = DOC;
 exports.MAP = MAP;
 exports.NODE_TYPE = NODE_TYPE;
-exports.NodeBase = NodeBase;
 exports.PAIR = PAIR;
 exports.SCALAR = SCALAR;
 exports.SEQ = SEQ;
@@ -12550,449 +14100,13 @@ exports.isSeq = isSeq;
 
 /***/ }),
 
-/***/ 3497:
-/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
-
-"use strict";
-
-
-var createNode = __webpack_require__(9807);
-var stringifyPair = __webpack_require__(10);
-var addPairToJSMap = __webpack_require__(5193);
-var Node = __webpack_require__(9752);
-
-function createPair(key, value, ctx) {
-    const k = createNode.createNode(key, undefined, ctx);
-    const v = createNode.createNode(value, undefined, ctx);
-    return new Pair(k, v);
-}
-class Pair {
-    constructor(key, value = null) {
-        Object.defineProperty(this, Node.NODE_TYPE, { value: Node.PAIR });
-        this.key = key;
-        this.value = value;
-    }
-    clone(schema) {
-        let { key, value } = this;
-        if (Node.isNode(key))
-            key = key.clone(schema);
-        if (Node.isNode(value))
-            value = value.clone(schema);
-        return new Pair(key, value);
-    }
-    toJSON(_, ctx) {
-        const pair = ctx && ctx.mapAsMap ? new Map() : {};
-        return addPairToJSMap.addPairToJSMap(ctx, pair, this);
-    }
-    toString(ctx, onComment, onChompKeep) {
-        return ctx && ctx.doc
-            ? stringifyPair.stringifyPair(this, ctx, onComment, onChompKeep)
-            : JSON.stringify(this);
-    }
-}
-
-exports.Pair = Pair;
-exports.createPair = createPair;
-
-
-/***/ }),
-
-/***/ 8160:
-/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
-
-"use strict";
-
-
-var Node = __webpack_require__(9752);
-var toJS = __webpack_require__(8842);
-
-const isScalarValue = (value) => !value || (typeof value !== 'function' && typeof value !== 'object');
-class Scalar extends Node.NodeBase {
-    constructor(value) {
-        super(Node.SCALAR);
-        this.value = value;
-    }
-    toJSON(arg, ctx) {
-        return ctx && ctx.keep ? this.value : toJS.toJS(this.value, arg, ctx);
-    }
-    toString() {
-        return String(this.value);
-    }
-}
-Scalar.BLOCK_FOLDED = 'BLOCK_FOLDED';
-Scalar.BLOCK_LITERAL = 'BLOCK_LITERAL';
-Scalar.PLAIN = 'PLAIN';
-Scalar.QUOTE_DOUBLE = 'QUOTE_DOUBLE';
-Scalar.QUOTE_SINGLE = 'QUOTE_SINGLE';
-
-exports.Scalar = Scalar;
-exports.isScalarValue = isScalarValue;
-
-
-/***/ }),
-
-/***/ 6761:
-/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
-
-"use strict";
-
-
-var stringifyCollection = __webpack_require__(3541);
-var addPairToJSMap = __webpack_require__(5193);
-var Collection = __webpack_require__(9797);
-var Node = __webpack_require__(9752);
-var Pair = __webpack_require__(3497);
-var Scalar = __webpack_require__(8160);
-
-function findPair(items, key) {
-    const k = Node.isScalar(key) ? key.value : key;
-    for (const it of items) {
-        if (Node.isPair(it)) {
-            if (it.key === key || it.key === k)
-                return it;
-            if (Node.isScalar(it.key) && it.key.value === k)
-                return it;
-        }
-    }
-    return undefined;
-}
-class YAMLMap extends Collection.Collection {
-    constructor(schema) {
-        super(Node.MAP, schema);
-        this.items = [];
-    }
-    static get tagName() {
-        return 'tag:yaml.org,2002:map';
-    }
-    /**
-     * Adds a value to the collection.
-     *
-     * @param overwrite - If not set `true`, using a key that is already in the
-     *   collection will throw. Otherwise, overwrites the previous value.
-     */
-    add(pair, overwrite) {
-        let _pair;
-        if (Node.isPair(pair))
-            _pair = pair;
-        else if (!pair || typeof pair !== 'object' || !('key' in pair)) {
-            // In TypeScript, this never happens.
-            _pair = new Pair.Pair(pair, pair.value);
-        }
-        else
-            _pair = new Pair.Pair(pair.key, pair.value);
-        const prev = findPair(this.items, _pair.key);
-        const sortEntries = this.schema && this.schema.sortMapEntries;
-        if (prev) {
-            if (!overwrite)
-                throw new Error(`Key ${_pair.key} already set`);
-            // For scalars, keep the old node & its comments and anchors
-            if (Node.isScalar(prev.value) && Scalar.isScalarValue(_pair.value))
-                prev.value.value = _pair.value;
-            else
-                prev.value = _pair.value;
-        }
-        else if (sortEntries) {
-            const i = this.items.findIndex(item => sortEntries(_pair, item) < 0);
-            if (i === -1)
-                this.items.push(_pair);
-            else
-                this.items.splice(i, 0, _pair);
-        }
-        else {
-            this.items.push(_pair);
-        }
-    }
-    delete(key) {
-        const it = findPair(this.items, key);
-        if (!it)
-            return false;
-        const del = this.items.splice(this.items.indexOf(it), 1);
-        return del.length > 0;
-    }
-    get(key, keepScalar) {
-        const it = findPair(this.items, key);
-        const node = it && it.value;
-        return !keepScalar && Node.isScalar(node) ? node.value : node;
-    }
-    has(key) {
-        return !!findPair(this.items, key);
-    }
-    set(key, value) {
-        this.add(new Pair.Pair(key, value), true);
-    }
-    /**
-     * @param ctx - Conversion context, originally set in Document#toJS()
-     * @param {Class} Type - If set, forces the returned collection type
-     * @returns Instance of Type, Map, or Object
-     */
-    toJSON(_, ctx, Type) {
-        const map = Type ? new Type() : ctx && ctx.mapAsMap ? new Map() : {};
-        if (ctx && ctx.onCreate)
-            ctx.onCreate(map);
-        for (const item of this.items)
-            addPairToJSMap.addPairToJSMap(ctx, map, item);
-        return map;
-    }
-    toString(ctx, onComment, onChompKeep) {
-        if (!ctx)
-            return JSON.stringify(this);
-        for (const item of this.items) {
-            if (!Node.isPair(item))
-                throw new Error(`Map items must all be pairs; found ${JSON.stringify(item)} instead`);
-        }
-        if (!ctx.allNullValues && this.hasAllNullValues(false))
-            ctx = Object.assign({}, ctx, { allNullValues: true });
-        return stringifyCollection.stringifyCollection(this, ctx, {
-            blockItem: n => n.str,
-            flowChars: { start: '{', end: '}' },
-            itemIndent: ctx.indent || '',
-            onChompKeep,
-            onComment
-        });
-    }
-}
-
-exports.YAMLMap = YAMLMap;
-exports.findPair = findPair;
-
-
-/***/ }),
-
-/***/ 3810:
-/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
-
-"use strict";
-
-
-var stringifyCollection = __webpack_require__(3541);
-var Collection = __webpack_require__(9797);
-var Node = __webpack_require__(9752);
-var Scalar = __webpack_require__(8160);
-var toJS = __webpack_require__(8842);
-
-class YAMLSeq extends Collection.Collection {
-    constructor(schema) {
-        super(Node.SEQ, schema);
-        this.items = [];
-    }
-    static get tagName() {
-        return 'tag:yaml.org,2002:seq';
-    }
-    add(value) {
-        this.items.push(value);
-    }
-    /**
-     * Removes a value from the collection.
-     *
-     * `key` must contain a representation of an integer for this to succeed.
-     * It may be wrapped in a `Scalar`.
-     *
-     * @returns `true` if the item was found and removed.
-     */
-    delete(key) {
-        const idx = asItemIndex(key);
-        if (typeof idx !== 'number')
-            return false;
-        const del = this.items.splice(idx, 1);
-        return del.length > 0;
-    }
-    /**
-     * Returns item at `key`, or `undefined` if not found. By default unwraps
-     * scalar values from their surrounding node; to disable set `keepScalar` to
-     * `true` (collections are always returned intact).
-     *
-     * `key` must contain a representation of an integer for this to succeed.
-     * It may be wrapped in a `Scalar`.
-     */
-    get(key, keepScalar) {
-        const idx = asItemIndex(key);
-        if (typeof idx !== 'number')
-            return undefined;
-        const it = this.items[idx];
-        return !keepScalar && Node.isScalar(it) ? it.value : it;
-    }
-    /**
-     * Checks if the collection includes a value with the key `key`.
-     *
-     * `key` must contain a representation of an integer for this to succeed.
-     * It may be wrapped in a `Scalar`.
-     */
-    has(key) {
-        const idx = asItemIndex(key);
-        return typeof idx === 'number' && idx < this.items.length;
-    }
-    /**
-     * Sets a value in this collection. For `!!set`, `value` needs to be a
-     * boolean to add/remove the item from the set.
-     *
-     * If `key` does not contain a representation of an integer, this will throw.
-     * It may be wrapped in a `Scalar`.
-     */
-    set(key, value) {
-        const idx = asItemIndex(key);
-        if (typeof idx !== 'number')
-            throw new Error(`Expected a valid index, not ${key}.`);
-        const prev = this.items[idx];
-        if (Node.isScalar(prev) && Scalar.isScalarValue(value))
-            prev.value = value;
-        else
-            this.items[idx] = value;
-    }
-    toJSON(_, ctx) {
-        const seq = [];
-        if (ctx && ctx.onCreate)
-            ctx.onCreate(seq);
-        let i = 0;
-        for (const item of this.items)
-            seq.push(toJS.toJS(item, String(i++), ctx));
-        return seq;
-    }
-    toString(ctx, onComment, onChompKeep) {
-        if (!ctx)
-            return JSON.stringify(this);
-        return stringifyCollection.stringifyCollection(this, ctx, {
-            blockItem: n => (n.comment ? n.str : `- ${n.str}`),
-            flowChars: { start: '[', end: ']' },
-            itemIndent: (ctx.indent || '') + '  ',
-            onChompKeep,
-            onComment
-        });
-    }
-}
-function asItemIndex(key) {
-    let idx = Node.isScalar(key) ? key.value : key;
-    if (idx && typeof idx === 'string')
-        idx = Number(idx);
-    return typeof idx === 'number' && Number.isInteger(idx) && idx >= 0
-        ? idx
-        : null;
-}
-
-exports.YAMLSeq = YAMLSeq;
-
-
-/***/ }),
-
-/***/ 5193:
-/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
-
-"use strict";
-
-
-var log = __webpack_require__(469);
-var stringify = __webpack_require__(1922);
-var Node = __webpack_require__(9752);
-var Scalar = __webpack_require__(8160);
-var toJS = __webpack_require__(8842);
-
-const MERGE_KEY = '<<';
-function addPairToJSMap(ctx, map, { key, value }) {
-    if (ctx && ctx.doc.schema.merge && isMergeKey(key)) {
-        if (Node.isSeq(value))
-            for (const it of value.items)
-                mergeToJSMap(ctx, map, it);
-        else if (Array.isArray(value))
-            for (const it of value)
-                mergeToJSMap(ctx, map, it);
-        else
-            mergeToJSMap(ctx, map, value);
-    }
-    else {
-        const jsKey = toJS.toJS(key, '', ctx);
-        if (map instanceof Map) {
-            map.set(jsKey, toJS.toJS(value, jsKey, ctx));
-        }
-        else if (map instanceof Set) {
-            map.add(jsKey);
-        }
-        else {
-            const stringKey = stringifyKey(key, jsKey, ctx);
-            const jsValue = toJS.toJS(value, stringKey, ctx);
-            if (stringKey in map)
-                Object.defineProperty(map, stringKey, {
-                    value: jsValue,
-                    writable: true,
-                    enumerable: true,
-                    configurable: true
-                });
-            else
-                map[stringKey] = jsValue;
-        }
-    }
-    return map;
-}
-const isMergeKey = (key) => key === MERGE_KEY ||
-    (Node.isScalar(key) &&
-        key.value === MERGE_KEY &&
-        (!key.type || key.type === Scalar.Scalar.PLAIN));
-// If the value associated with a merge key is a single mapping node, each of
-// its key/value pairs is inserted into the current mapping, unless the key
-// already exists in it. If the value associated with the merge key is a
-// sequence, then this sequence is expected to contain mapping nodes and each
-// of these nodes is merged in turn according to its order in the sequence.
-// Keys in mapping nodes earlier in the sequence override keys specified in
-// later mapping nodes. -- http://yaml.org/type/merge.html
-function mergeToJSMap(ctx, map, value) {
-    const source = ctx && Node.isAlias(value) ? value.resolve(ctx.doc) : value;
-    if (!Node.isMap(source))
-        throw new Error('Merge sources must be maps or map aliases');
-    const srcMap = source.toJSON(null, ctx, Map);
-    for (const [key, value] of srcMap) {
-        if (map instanceof Map) {
-            if (!map.has(key))
-                map.set(key, value);
-        }
-        else if (map instanceof Set) {
-            map.add(key);
-        }
-        else if (!Object.prototype.hasOwnProperty.call(map, key)) {
-            Object.defineProperty(map, key, {
-                value,
-                writable: true,
-                enumerable: true,
-                configurable: true
-            });
-        }
-    }
-    return map;
-}
-function stringifyKey(key, jsKey, ctx) {
-    if (jsKey === null)
-        return '';
-    if (typeof jsKey !== 'object')
-        return String(jsKey);
-    if (Node.isNode(key) && ctx && ctx.doc) {
-        const strCtx = stringify.createStringifyContext(ctx.doc, {});
-        strCtx.anchors = new Set();
-        for (const node of ctx.anchors.keys())
-            strCtx.anchors.add(node.anchor);
-        strCtx.inFlow = true;
-        strCtx.inStringifyKey = true;
-        const strKey = key.toString(strCtx);
-        if (!ctx.mapKeyWarned) {
-            let jsonStr = JSON.stringify(strKey);
-            if (jsonStr.length > 40)
-                jsonStr = jsonStr.substring(0, 36) + '..."';
-            log.warn(ctx.doc.options.logLevel, `Keys with collection values will be stringified due to JS Object restrictions: ${jsonStr}. Set mapAsMap: true to use object keys.`);
-            ctx.mapKeyWarned = true;
-        }
-        return strKey;
-    }
-    return JSON.stringify(jsKey);
-}
-
-exports.addPairToJSMap = addPairToJSMap;
-
-
-/***/ }),
-
 /***/ 8842:
 /***/ ((__unused_webpack_module, exports, __webpack_require__) => {
 
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 
 /**
  * Recursively convert any node or its contents to native JavaScript
@@ -13005,10 +14119,12 @@ var Node = __webpack_require__(9752);
  *   stringification.
  */
 function toJS(value, arg, ctx) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     if (Array.isArray(value))
         return value.map((v, i) => toJS(v, String(i), ctx));
     if (value && typeof value.toJSON === 'function') {
-        if (!ctx || !Node.hasAnchor(value))
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+        if (!ctx || !identity.hasAnchor(value))
             return value.toJSON(arg, ctx);
         const data = { aliasCount: 0, count: 1, res: undefined };
         ctx.anchors.set(value, data);
@@ -13021,39 +14137,12 @@ function toJS(value, arg, ctx) {
             ctx.onCreate(res);
         return res;
     }
-    if (typeof value === 'bigint' && !(ctx && ctx.keep))
+    if (typeof value === 'bigint' && !ctx?.keep)
         return Number(value);
     return value;
 }
 
 exports.toJS = toJS;
-
-
-/***/ }),
-
-/***/ 1501:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-
-/**
- * `yaml` defines document-specific options in three places: as an argument of
- * parse, create and stringify calls, in the values of `YAML.defaultOptions`,
- * and in the version-dependent `YAML.Document.defaults` object. Values set in
- * `YAML.defaultOptions` override version-dependent defaults, and argument
- * options override both.
- */
-const defaultOptions = {
-    intAsBigInt: false,
-    logLevel: 'warn',
-    prettyErrors: true,
-    strict: true,
-    uniqueKeys: true,
-    version: '1.2'
-};
-
-exports.defaultOptions = defaultOptions;
 
 
 /***/ }),
@@ -13069,10 +14158,6 @@ var resolveFlowScalar = __webpack_require__(6390);
 var errors = __webpack_require__(3305);
 var stringifyString = __webpack_require__(6084);
 
-/**
- * If `token` is a CST flow or block scalar, determine its string value and a few other attributes.
- * Otherwise, return `null`.
- */
 function resolveAsScalar(token, strict = true, onError) {
     if (token) {
         const _onError = (pos, code, message) => {
@@ -13108,15 +14193,14 @@ function resolveAsScalar(token, strict = true, onError) {
  * @param context.type The preferred type of the scalar token. If undefined, the previous type of the `token` will be used, defaulting to `'PLAIN'`.
  */
 function createScalarToken(value, context) {
-    var _a;
     const { implicitKey = false, indent, inFlow = false, offset = -1, type = 'PLAIN' } = context;
     const source = stringifyString.stringifyString({ type, value }, {
         implicitKey,
         indent: indent > 0 ? ' '.repeat(indent) : '',
         inFlow,
-        options: { lineWidth: -1 }
+        options: { blockQuote: true, lineWidth: -1 }
     });
-    const end = (_a = context.end) !== null && _a !== void 0 ? _a : [
+    const end = context.end ?? [
         { type: 'newline', offset: -1, indent, source: '\n' }
     ];
     switch (source[0]) {
@@ -13183,7 +14267,7 @@ function setScalarValue(token, value, context = {}) {
         implicitKey: implicitKey || indent === null,
         indent: indent !== null && indent > 0 ? ' '.repeat(indent) : '',
         inFlow,
-        options: { lineWidth: -1 }
+        options: { blockQuote: true, lineWidth: -1 }
     });
     switch (source[0]) {
         case '|':
@@ -13415,7 +14499,7 @@ visit.REMOVE = REMOVE;
 visit.itemAtPath = (cst, path) => {
     let item = cst;
     for (const [field, index] of path) {
-        const tok = item && item[field];
+        const tok = item?.[field];
         if (tok && 'items' in tok) {
             item = tok.items[index];
         }
@@ -13432,7 +14516,7 @@ visit.itemAtPath = (cst, path) => {
 visit.parentCollection = (cst, path) => {
     const parent = visit.itemAtPath(cst, path.slice(0, -1));
     const field = path[path.length - 1][0];
-    const coll = parent && parent[field];
+    const coll = parent?.[field];
     if (coll && 'items' in coll)
         return coll;
     throw new Error('Parent collection not found');
@@ -13748,7 +14832,7 @@ class Lexer {
             this.lineEndPos = null;
         }
         this.atEnd = !incomplete;
-        let next = this.next || 'stream';
+        let next = this.next ?? 'stream';
         while (next && (incomplete || this.hasChars(1)))
             next = yield* this.parseNext(next);
     }
@@ -13952,14 +15036,19 @@ class Lexer {
         let indent = -1;
         do {
             nl = yield* this.pushNewline();
-            sp = yield* this.pushSpaces(true);
-            if (nl > 0)
+            if (nl > 0) {
+                sp = yield* this.pushSpaces(false);
                 this.indentValue = indent = sp;
+            }
+            else {
+                sp = 0;
+            }
+            sp += yield* this.pushSpaces(true);
         } while (nl + sp > 0);
         const line = this.getLine();
         if (line === null)
             return this.setNext('flow');
-        if ((indent !== -1 && indent < this.indentNext) ||
+        if ((indent !== -1 && indent < this.indentNext && line[0] !== '#') ||
             (indent === 0 &&
                 (line.startsWith('---') || line.startsWith('...')) &&
                 isEmpty(line[3]))) {
@@ -13977,8 +15066,11 @@ class Lexer {
             }
         }
         let n = 0;
-        while (line[n] === ',')
-            n += (yield* this.pushCount(1)) + (yield* this.pushSpaces(true));
+        while (line[n] === ',') {
+            n += yield* this.pushCount(1);
+            n += yield* this.pushSpaces(true);
+            this.flowKey = false;
+        }
         n += yield* this.pushIndicators();
         switch (line[n]) {
             case undefined:
@@ -14008,6 +15100,7 @@ class Lexer {
             case ':': {
                 const next = this.charAt(1);
                 if (this.flowKey || isEmpty(next) || next === ',') {
+                    this.flowKey = false;
                     yield* this.pushCount(1);
                     yield* this.pushSpaces(true);
                     return 'flow';
@@ -14124,9 +15217,10 @@ class Lexer {
                 let ch = this.buffer[i];
                 if (ch === '\r')
                     ch = this.buffer[--i];
+                const lastChar = i; // Drop the line if last char not more indented
                 while (ch === ' ' || ch === '\t')
                     ch = this.buffer[--i];
-                if (ch === '\n' && i >= this.pos)
+                if (ch === '\n' && i >= this.pos && i + 1 + indent > lastChar)
                     nl = i;
                 else
                     break;
@@ -14209,16 +15303,21 @@ class Lexer {
                 return ((yield* this.pushUntil(isNotAnchorChar)) +
                     (yield* this.pushSpaces(true)) +
                     (yield* this.pushIndicators()));
-            case ':':
-            case '?': // this is an error outside flow collections
             case '-': // this is an error
-                if (isEmpty(this.charAt(1))) {
-                    if (this.flowLevel === 0)
+            case '?': // this is an error outside flow collections
+            case ':': {
+                const inFlow = this.flowLevel > 0;
+                const ch1 = this.charAt(1);
+                if (isEmpty(ch1) || (inFlow && invalidFlowScalarChars.includes(ch1))) {
+                    if (!inFlow)
                         this.indentNext = this.indentValue + 1;
+                    else if (this.flowKey)
+                        this.flowKey = false;
                     return ((yield* this.pushCount(1)) +
                         (yield* this.pushSpaces(true)) +
                         (yield* this.pushIndicators()));
                 }
+            }
         }
         return 0;
     }
@@ -14347,7 +15446,7 @@ function includesToken(list, type) {
             return true;
     return false;
 }
-function includesNonEmpty(list) {
+function findNonEmptyIndex(list) {
     for (let i = 0; i < list.length; ++i) {
         switch (list[i].type) {
             case 'space':
@@ -14355,13 +15454,13 @@ function includesNonEmpty(list) {
             case 'newline':
                 break;
             default:
-                return true;
+                return i;
         }
     }
-    return false;
+    return -1;
 }
 function isFlowToken(token) {
-    switch (token === null || token === void 0 ? void 0 : token.type) {
+    switch (token?.type) {
         case 'alias':
         case 'scalar':
         case 'single-quoted-scalar':
@@ -14378,7 +15477,7 @@ function getPrevProps(parent) {
             return parent.start;
         case 'block-map': {
             const it = parent.items[parent.items.length - 1];
-            return it.sep || it.start;
+            return it.sep ?? it.start;
         }
         case 'block-seq':
             return parent.items[parent.items.length - 1].start;
@@ -14389,7 +15488,6 @@ function getPrevProps(parent) {
 }
 /** Note: May modify input array */
 function getFirstKeyStartProps(prev) {
-    var _a;
     if (prev.length === 0)
         return [];
     let i = prev.length;
@@ -14403,7 +15501,7 @@ function getFirstKeyStartProps(prev) {
                 break loop;
         }
     }
-    while (((_a = prev[++i]) === null || _a === void 0 ? void 0 : _a.type) === 'space') {
+    while (prev[++i]?.type === 'space') {
         /* loop */
     }
     return prev.splice(i, prev.length);
@@ -14545,6 +15643,7 @@ class Parser {
                         this.indent += source.length;
                     break;
                 case 'doc-mode':
+                case 'flow-error-end':
                     return;
                 default:
                     this.atNewLine = false;
@@ -14606,7 +15705,7 @@ class Parser {
         return this.stack[this.stack.length - n];
     }
     *pop(error) {
-        const token = error || this.stack.pop();
+        const token = error ?? this.stack.pop();
         /* istanbul ignore if should not happen */
         if (!token) {
             const message = 'Tried to pop an empty stack';
@@ -14617,9 +15716,14 @@ class Parser {
         }
         else {
             const top = this.peek(1);
-            // For these, parent indent is needed instead of own
-            if (token.type === 'block-scalar' || token.type === 'flow-collection')
-                token.indent = 'indent' in top ? top.indent : -1;
+            if (token.type === 'block-scalar') {
+                // Block scalars use their parent rather than header indent
+                token.indent = 'indent' in top ? top.indent : 0;
+            }
+            else if (token.type === 'flow-collection' && top.type === 'document') {
+                // Ignore all indent for top-level flow collections
+                token.indent = 0;
+            }
             if (token.type === 'flow-collection')
                 fixFlowSeqItems(token);
             switch (top.type) {
@@ -14678,7 +15782,7 @@ class Parser {
                     !last.sep &&
                     !last.value &&
                     last.start.length > 0 &&
-                    !includesNonEmpty(last.start) &&
+                    findNonEmptyIndex(last.start) === -1 &&
                     (token.indent === 0 ||
                         last.start.every(st => st.type !== 'comment' || st.indent < token.indent))) {
                     if (top.type === 'document')
@@ -14726,7 +15830,7 @@ class Parser {
             return yield* this.lineEnd(doc);
         switch (this.type) {
             case 'doc-start': {
-                if (includesNonEmpty(doc.start)) {
+                if (findNonEmptyIndex(doc.start) !== -1) {
                     yield* this.pop();
                     yield* this.step();
                 }
@@ -14806,7 +15910,6 @@ class Parser {
         }
     }
     *blockMap(map) {
-        var _a;
         const it = map.items[map.items.length - 1];
         // it.sep is true-ish if pair already has key or : separator
         switch (this.type) {
@@ -14815,26 +15918,30 @@ class Parser {
                 if (it.value) {
                     const end = 'end' in it.value ? it.value.end : undefined;
                     const last = Array.isArray(end) ? end[end.length - 1] : undefined;
-                    if ((last === null || last === void 0 ? void 0 : last.type) === 'comment')
-                        end === null || end === void 0 ? void 0 : end.push(this.sourceToken);
+                    if (last?.type === 'comment')
+                        end?.push(this.sourceToken);
                     else
                         map.items.push({ start: [this.sourceToken] });
                 }
-                else if (it.sep)
+                else if (it.sep) {
                     it.sep.push(this.sourceToken);
-                else
+                }
+                else {
                     it.start.push(this.sourceToken);
+                }
                 return;
             case 'space':
             case 'comment':
-                if (it.value)
+                if (it.value) {
                     map.items.push({ start: [this.sourceToken] });
-                else if (it.sep)
+                }
+                else if (it.sep) {
                     it.sep.push(this.sourceToken);
+                }
                 else {
                     if (this.atIndentedComment(it.start, map.indent)) {
                         const prev = map.items[map.items.length - 2];
-                        const end = (_a = prev === null || prev === void 0 ? void 0 : prev.value) === null || _a === void 0 ? void 0 : _a.end;
+                        const end = prev?.value?.end;
                         if (Array.isArray(end)) {
                             Array.prototype.push.apply(end, it.start);
                             end.push(this.sourceToken);
@@ -14847,66 +15954,132 @@ class Parser {
                 return;
         }
         if (this.indent >= map.indent) {
-            const atNextItem = !this.onKeyLine &&
-                this.indent === map.indent &&
-                (it.sep || includesNonEmpty(it.start));
+            const atNextItem = !this.onKeyLine && this.indent === map.indent && it.sep;
+            // For empty nodes, assign newline-separated not indented empty tokens to following node
+            let start = [];
+            if (atNextItem && it.sep && !it.value) {
+                const nl = [];
+                for (let i = 0; i < it.sep.length; ++i) {
+                    const st = it.sep[i];
+                    switch (st.type) {
+                        case 'newline':
+                            nl.push(i);
+                            break;
+                        case 'space':
+                            break;
+                        case 'comment':
+                            if (st.indent > map.indent)
+                                nl.length = 0;
+                            break;
+                        default:
+                            nl.length = 0;
+                    }
+                }
+                if (nl.length >= 2)
+                    start = it.sep.splice(nl[1]);
+            }
             switch (this.type) {
                 case 'anchor':
                 case 'tag':
                     if (atNextItem || it.value) {
-                        map.items.push({ start: [this.sourceToken] });
+                        start.push(this.sourceToken);
+                        map.items.push({ start });
                         this.onKeyLine = true;
                     }
-                    else if (it.sep)
+                    else if (it.sep) {
                         it.sep.push(this.sourceToken);
-                    else
+                    }
+                    else {
                         it.start.push(this.sourceToken);
+                    }
                     return;
                 case 'explicit-key-ind':
-                    if (!it.sep && !includesToken(it.start, 'explicit-key-ind'))
+                    if (!it.sep && !includesToken(it.start, 'explicit-key-ind')) {
                         it.start.push(this.sourceToken);
-                    else if (atNextItem || it.value)
-                        map.items.push({ start: [this.sourceToken] });
-                    else
+                    }
+                    else if (atNextItem || it.value) {
+                        start.push(this.sourceToken);
+                        map.items.push({ start });
+                    }
+                    else {
                         this.stack.push({
                             type: 'block-map',
                             offset: this.offset,
                             indent: this.indent,
                             items: [{ start: [this.sourceToken] }]
                         });
+                    }
                     this.onKeyLine = true;
                     return;
                 case 'map-value-ind':
-                    if (!it.sep)
-                        Object.assign(it, { key: null, sep: [this.sourceToken] });
-                    else if (it.value ||
-                        (atNextItem && !includesToken(it.start, 'explicit-key-ind')))
-                        map.items.push({ start: [], key: null, sep: [this.sourceToken] });
-                    else if (includesToken(it.sep, 'map-value-ind'))
-                        this.stack.push({
-                            type: 'block-map',
-                            offset: this.offset,
-                            indent: this.indent,
-                            items: [{ start: [], key: null, sep: [this.sourceToken] }]
-                        });
-                    else if (includesToken(it.start, 'explicit-key-ind') &&
-                        isFlowToken(it.key) &&
-                        !includesToken(it.sep, 'newline')) {
-                        const start = getFirstKeyStartProps(it.start);
-                        const key = it.key;
-                        const sep = it.sep;
-                        sep.push(this.sourceToken);
-                        // @ts-ignore type guard is wrong here
-                        delete it.key, delete it.sep;
-                        this.stack.push({
-                            type: 'block-map',
-                            offset: this.offset,
-                            indent: this.indent,
-                            items: [{ start, key, sep }]
-                        });
+                    if (includesToken(it.start, 'explicit-key-ind')) {
+                        if (!it.sep) {
+                            if (includesToken(it.start, 'newline')) {
+                                Object.assign(it, { key: null, sep: [this.sourceToken] });
+                            }
+                            else {
+                                const start = getFirstKeyStartProps(it.start);
+                                this.stack.push({
+                                    type: 'block-map',
+                                    offset: this.offset,
+                                    indent: this.indent,
+                                    items: [{ start, key: null, sep: [this.sourceToken] }]
+                                });
+                            }
+                        }
+                        else if (it.value) {
+                            map.items.push({ start: [], key: null, sep: [this.sourceToken] });
+                        }
+                        else if (includesToken(it.sep, 'map-value-ind')) {
+                            this.stack.push({
+                                type: 'block-map',
+                                offset: this.offset,
+                                indent: this.indent,
+                                items: [{ start, key: null, sep: [this.sourceToken] }]
+                            });
+                        }
+                        else if (isFlowToken(it.key) &&
+                            !includesToken(it.sep, 'newline')) {
+                            const start = getFirstKeyStartProps(it.start);
+                            const key = it.key;
+                            const sep = it.sep;
+                            sep.push(this.sourceToken);
+                            // @ts-expect-error type guard is wrong here
+                            delete it.key, delete it.sep;
+                            this.stack.push({
+                                type: 'block-map',
+                                offset: this.offset,
+                                indent: this.indent,
+                                items: [{ start, key, sep }]
+                            });
+                        }
+                        else if (start.length > 0) {
+                            // Not actually at next item
+                            it.sep = it.sep.concat(start, this.sourceToken);
+                        }
+                        else {
+                            it.sep.push(this.sourceToken);
+                        }
                     }
-                    else
-                        it.sep.push(this.sourceToken);
+                    else {
+                        if (!it.sep) {
+                            Object.assign(it, { key: null, sep: [this.sourceToken] });
+                        }
+                        else if (it.value || atNextItem) {
+                            map.items.push({ start, key: null, sep: [this.sourceToken] });
+                        }
+                        else if (includesToken(it.sep, 'map-value-ind')) {
+                            this.stack.push({
+                                type: 'block-map',
+                                offset: this.offset,
+                                indent: this.indent,
+                                items: [{ start: [], key: null, sep: [this.sourceToken] }]
+                            });
+                        }
+                        else {
+                            it.sep.push(this.sourceToken);
+                        }
+                    }
                     this.onKeyLine = true;
                     return;
                 case 'alias':
@@ -14915,7 +16088,7 @@ class Parser {
                 case 'double-quoted-scalar': {
                     const fs = this.flowScalar(this.type);
                     if (atNextItem || it.value) {
-                        map.items.push({ start: [], key: fs, sep: [] });
+                        map.items.push({ start, key: fs, sep: [] });
                         this.onKeyLine = true;
                     }
                     else if (it.sep) {
@@ -14932,8 +16105,9 @@ class Parser {
                     if (bv) {
                         if (atNextItem &&
                             bv.type !== 'block-seq' &&
-                            includesToken(it.start, 'explicit-key-ind'))
-                            map.items.push({ start: [] });
+                            includesToken(it.start, 'explicit-key-ind')) {
+                            map.items.push({ start });
+                        }
                         this.stack.push(bv);
                         return;
                     }
@@ -14944,15 +16118,14 @@ class Parser {
         yield* this.step();
     }
     *blockSequence(seq) {
-        var _a;
         const it = seq.items[seq.items.length - 1];
         switch (this.type) {
             case 'newline':
                 if (it.value) {
                     const end = 'end' in it.value ? it.value.end : undefined;
                     const last = Array.isArray(end) ? end[end.length - 1] : undefined;
-                    if ((last === null || last === void 0 ? void 0 : last.type) === 'comment')
-                        end === null || end === void 0 ? void 0 : end.push(this.sourceToken);
+                    if (last?.type === 'comment')
+                        end?.push(this.sourceToken);
                     else
                         seq.items.push({ start: [this.sourceToken] });
                 }
@@ -14966,7 +16139,7 @@ class Parser {
                 else {
                     if (this.atIndentedComment(it.start, seq.indent)) {
                         const prev = seq.items[seq.items.length - 2];
-                        const end = (_a = prev === null || prev === void 0 ? void 0 : prev.value) === null || _a === void 0 ? void 0 : _a.end;
+                        const end = prev?.value?.end;
                         if (Array.isArray(end)) {
                             Array.prototype.push.apply(end, it.start);
                             end.push(this.sourceToken);
@@ -15070,7 +16243,7 @@ class Parser {
         else {
             const parent = this.peek(2);
             if (parent.type === 'block-map' &&
-                (this.type === 'map-value-ind' ||
+                ((this.type === 'map-value-ind' && parent.indent === fc.indent) ||
                     (this.type === 'newline' &&
                         !parent.items[parent.items.length - 1].sep))) {
                 yield* this.pop();
@@ -15234,10 +16407,8 @@ var lineCounter = __webpack_require__(5748);
 var parser = __webpack_require__(6466);
 
 function parseOptions(options) {
-    const prettyErrors = !options || options.prettyErrors !== false;
-    const lineCounter$1 = (options && options.lineCounter) ||
-        (prettyErrors && new lineCounter.LineCounter()) ||
-        null;
+    const prettyErrors = options.prettyErrors !== false;
+    const lineCounter$1 = options.lineCounter || (prettyErrors && new lineCounter.LineCounter()) || null;
     return { lineCounter: lineCounter$1, prettyErrors };
 }
 /**
@@ -15251,7 +16422,7 @@ function parseOptions(options) {
  */
 function parseAllDocuments(source, options = {}) {
     const { lineCounter, prettyErrors } = parseOptions(options);
-    const parser$1 = new parser.Parser(lineCounter === null || lineCounter === void 0 ? void 0 : lineCounter.addNewLine);
+    const parser$1 = new parser.Parser(lineCounter?.addNewLine);
     const composer$1 = new composer.Composer(options);
     const docs = Array.from(composer$1.compose(parser$1.parse(source)));
     if (prettyErrors && lineCounter)
@@ -15266,7 +16437,7 @@ function parseAllDocuments(source, options = {}) {
 /** Parse an input string into a single YAML.Document */
 function parseDocument(source, options = {}) {
     const { lineCounter, prettyErrors } = parseOptions(options);
-    const parser$1 = new parser.Parser(lineCounter === null || lineCounter === void 0 ? void 0 : lineCounter.addNewLine);
+    const parser$1 = new parser.Parser(lineCounter?.addNewLine);
     const composer$1 = new composer.Composer(options);
     // `doc` is always set by compose.end(true) at the very latest
     let doc = null;
@@ -15319,7 +16490,7 @@ function stringify(value, replacer, options) {
         options = indent < 1 ? undefined : indent > 8 ? { indent: 8 } : { indent };
     }
     if (value === undefined) {
-        const { keepUndefined } = options || replacer || {};
+        const { keepUndefined } = options ?? replacer ?? {};
         if (!keepUndefined)
             return undefined;
     }
@@ -15340,7 +16511,7 @@ exports.stringify = stringify;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var map = __webpack_require__(1400);
 var seq = __webpack_require__(6698);
 var string = __webpack_require__(1576);
@@ -15348,17 +16519,27 @@ var tags = __webpack_require__(2102);
 
 const sortMapEntriesByKey = (a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 class Schema {
-    constructor({ customTags, merge, resolveKnownTags, schema, sortMapEntries }) {
+    constructor({ compat, customTags, merge, resolveKnownTags, schema, sortMapEntries, toStringDefaults }) {
+        this.compat = Array.isArray(compat)
+            ? tags.getTags(compat, 'compat')
+            : compat
+                ? tags.getTags(null, compat)
+                : null;
         this.merge = !!merge;
-        this.name = schema || 'core';
+        this.name = (typeof schema === 'string' && schema) || 'core';
         this.knownTags = resolveKnownTags ? tags.coreKnownTags : {};
         this.tags = tags.getTags(customTags, this.name);
-        Object.defineProperty(this, Node.MAP, { value: map.map });
-        Object.defineProperty(this, Node.SCALAR, { value: string.string });
-        Object.defineProperty(this, Node.SEQ, { value: seq.seq });
+        this.toStringOptions = toStringDefaults ?? null;
+        Object.defineProperty(this, identity.MAP, { value: map.map });
+        Object.defineProperty(this, identity.SCALAR, { value: string.string });
+        Object.defineProperty(this, identity.SEQ, { value: seq.seq });
         // Used by createMap()
         this.sortMapEntries =
-            sortMapEntries === true ? sortMapEntriesByKey : sortMapEntries || null;
+            typeof sortMapEntries === 'function'
+                ? sortMapEntries
+                : sortMapEntries === true
+                    ? sortMapEntriesByKey
+                    : null;
     }
     clone() {
         const copy = Object.create(Schema.prototype, Object.getOwnPropertyDescriptors(this));
@@ -15378,45 +16559,20 @@ exports.Schema = Schema;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
-var Pair = __webpack_require__(3497);
+var identity = __webpack_require__(7560);
 var YAMLMap = __webpack_require__(6761);
 
-function createMap(schema, obj, ctx) {
-    const { keepUndefined, replacer } = ctx;
-    const map = new YAMLMap.YAMLMap(schema);
-    const add = (key, value) => {
-        if (typeof replacer === 'function')
-            value = replacer.call(obj, key, value);
-        else if (Array.isArray(replacer) && !replacer.includes(key))
-            return;
-        if (value !== undefined || keepUndefined)
-            map.items.push(Pair.createPair(key, value, ctx));
-    };
-    if (obj instanceof Map) {
-        for (const [key, value] of obj)
-            add(key, value);
-    }
-    else if (obj && typeof obj === 'object') {
-        for (const key of Object.keys(obj))
-            add(key, obj[key]);
-    }
-    if (typeof schema.sortMapEntries === 'function') {
-        map.items.sort(schema.sortMapEntries);
-    }
-    return map;
-}
 const map = {
     collection: 'map',
-    createNode: createMap,
     default: true,
     nodeClass: YAMLMap.YAMLMap,
     tag: 'tag:yaml.org,2002:map',
     resolve(map, onError) {
-        if (!Node.isMap(map))
+        if (!identity.isMap(map))
             onError('Expected a mapping for this tag');
         return map;
-    }
+    },
+    createNode: (schema, obj, ctx) => YAMLMap.YAMLMap.from(schema, obj, ctx)
 };
 
 exports.map = map;
@@ -15439,7 +16595,9 @@ const nullTag = {
     tag: 'tag:yaml.org,2002:null',
     test: /^(?:~|[Nn]ull|NULL)?$/,
     resolve: () => new Scalar.Scalar(null),
-    stringify: ({ source }, ctx) => source && nullTag.test.test(source) ? source : ctx.options.nullStr
+    stringify: ({ source }, ctx) => typeof source === 'string' && nullTag.test.test(source)
+        ? source
+        : ctx.options.nullStr
 };
 
 exports.nullTag = nullTag;
@@ -15453,36 +16611,20 @@ exports.nullTag = nullTag;
 "use strict";
 
 
-var createNode = __webpack_require__(9807);
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var YAMLSeq = __webpack_require__(3810);
 
-function createSeq(schema, obj, ctx) {
-    const { replacer } = ctx;
-    const seq = new YAMLSeq.YAMLSeq(schema);
-    if (obj && Symbol.iterator in Object(obj)) {
-        let i = 0;
-        for (let it of obj) {
-            if (typeof replacer === 'function') {
-                const key = obj instanceof Set ? it : String(i++);
-                it = replacer.call(obj, key, it);
-            }
-            seq.items.push(createNode.createNode(it, undefined, ctx));
-        }
-    }
-    return seq;
-}
 const seq = {
     collection: 'seq',
-    createNode: createSeq,
     default: true,
     nodeClass: YAMLSeq.YAMLSeq,
     tag: 'tag:yaml.org,2002:seq',
     resolve(seq, onError) {
-        if (!Node.isSeq(seq))
+        if (!identity.isSeq(seq))
             onError('Expected a sequence for this tag');
         return seq;
-    }
+    },
+    createNode: (schema, obj, ctx) => YAMLSeq.YAMLSeq.from(schema, obj, ctx)
 };
 
 exports.seq = seq;
@@ -15571,7 +16713,10 @@ const floatExp = {
     format: 'EXP',
     test: /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)[eE][-+]?[0-9]+$/,
     resolve: str => parseFloat(str),
-    stringify: ({ value }) => Number(value).toExponential()
+    stringify(node) {
+        const num = Number(node.value);
+        return isFinite(num) ? num.toExponential() : stringifyNumber.stringifyNumber(node);
+    }
 };
 const float = {
     identify: value => typeof value === 'number',
@@ -15772,13 +16917,13 @@ var schema$2 = __webpack_require__(8536);
 var set = __webpack_require__(9549);
 var timestamp = __webpack_require__(7717);
 
-const schemas = {
-    core: schema.schema,
-    failsafe: [map.map, seq.seq, string.string],
-    json: schema$1.schema,
-    yaml11: schema$2.schema,
-    'yaml-1.1': schema$2.schema
-};
+const schemas = new Map([
+    ['core', schema.schema],
+    ['failsafe', [map.map, seq.seq, string.string]],
+    ['json', schema$1.schema],
+    ['yaml11', schema$2.schema],
+    ['yaml-1.1', schema$2.schema]
+]);
 const tagsByName = {
     binary: binary.binary,
     bool: bool.boolTag,
@@ -15806,13 +16951,17 @@ const coreKnownTags = {
     'tag:yaml.org,2002:timestamp': timestamp.timestamp
 };
 function getTags(customTags, schemaName) {
-    let tags = schemas[schemaName];
+    let tags = schemas.get(schemaName);
     if (!tags) {
-        const keys = Object.keys(schemas)
-            .filter(key => key !== 'yaml11')
-            .map(key => JSON.stringify(key))
-            .join(', ');
-        throw new Error(`Unknown schema "${schemaName}"; use one of ${keys}`);
+        if (Array.isArray(customTags))
+            tags = [];
+        else {
+            const keys = Array.from(schemas.keys())
+                .filter(key => key !== 'yaml11')
+                .map(key => JSON.stringify(key))
+                .join(', ');
+            throw new Error(`Unknown schema "${schemaName}"; use one of ${keys} or define customTags array`);
+        }
     }
     if (Array.isArray(customTags)) {
         for (const tag of customTags)
@@ -15981,7 +17130,10 @@ const floatExp = {
     format: 'EXP',
     test: /^[-+]?(?:[0-9][0-9_]*)?(?:\.[0-9_]*)?[eE][-+]?[0-9]+$/,
     resolve: (str) => parseFloat(str.replace(/_/g, '')),
-    stringify: ({ value }) => Number(value).toExponential()
+    stringify(node) {
+        const num = Number(node.value);
+        return isFinite(num) ? num.toExponential() : stringifyNumber.stringifyNumber(node);
+    }
 };
 const float = {
     identify: value => typeof value === 'number',
@@ -16098,10 +17250,10 @@ exports.intOct = intOct;
 "use strict";
 
 
-var YAMLSeq = __webpack_require__(3810);
+var identity = __webpack_require__(7560);
 var toJS = __webpack_require__(8842);
-var Node = __webpack_require__(9752);
 var YAMLMap = __webpack_require__(6761);
+var YAMLSeq = __webpack_require__(3810);
 var pairs = __webpack_require__(5169);
 
 class YAMLOMap extends YAMLSeq.YAMLSeq {
@@ -16122,11 +17274,11 @@ class YAMLOMap extends YAMLSeq.YAMLSeq {
         if (!ctx)
             return super.toJSON(_);
         const map = new Map();
-        if (ctx && ctx.onCreate)
+        if (ctx?.onCreate)
             ctx.onCreate(map);
         for (const pair of this.items) {
             let key, value;
-            if (Node.isPair(pair)) {
+            if (identity.isPair(pair)) {
                 key = toJS.toJS(pair.key, '', ctx);
                 value = toJS.toJS(pair.value, key, ctx);
             }
@@ -16138,6 +17290,12 @@ class YAMLOMap extends YAMLSeq.YAMLSeq {
             map.set(key, value);
         }
         return map;
+    }
+    static from(schema, iterable, ctx) {
+        const pairs$1 = pairs.createPairs(schema, iterable, ctx);
+        const omap = new this();
+        omap.items = pairs$1.items;
+        return omap;
     }
 }
 YAMLOMap.tag = 'tag:yaml.org,2002:omap';
@@ -16151,7 +17309,7 @@ const omap = {
         const pairs$1 = pairs.resolvePairs(seq, onError);
         const seenKeys = [];
         for (const { key } of pairs$1.items) {
-            if (Node.isScalar(key)) {
+            if (identity.isScalar(key)) {
                 if (seenKeys.includes(key.value)) {
                     onError(`Ordered maps must not include duplicate keys: ${key.value}`);
                 }
@@ -16162,12 +17320,7 @@ const omap = {
         }
         return Object.assign(new YAMLOMap(), pairs$1);
     },
-    createNode(schema, iterable, ctx) {
-        const pairs$1 = pairs.createPairs(schema, iterable, ctx);
-        const omap = new YAMLOMap();
-        omap.items = pairs$1.items;
-        return omap;
-    }
+    createNode: (schema, iterable, ctx) => YAMLOMap.from(schema, iterable, ctx)
 };
 
 exports.YAMLOMap = YAMLOMap;
@@ -16182,18 +17335,18 @@ exports.omap = omap;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var Pair = __webpack_require__(3497);
 var Scalar = __webpack_require__(8160);
 var YAMLSeq = __webpack_require__(3810);
 
 function resolvePairs(seq, onError) {
-    if (Node.isSeq(seq)) {
+    if (identity.isSeq(seq)) {
         for (let i = 0; i < seq.items.length; ++i) {
             let item = seq.items[i];
-            if (Node.isPair(item))
+            if (identity.isPair(item))
                 continue;
-            else if (Node.isMap(item)) {
+            else if (identity.isMap(item)) {
                 if (item.items.length > 1)
                     onError('Each pair must have its own sequence indicator');
                 const pair = item.items[0] || new Pair.Pair(new Scalar.Scalar(null));
@@ -16202,14 +17355,14 @@ function resolvePairs(seq, onError) {
                         ? `${item.commentBefore}\n${pair.key.commentBefore}`
                         : item.commentBefore;
                 if (item.comment) {
-                    const cn = pair.value || pair.key;
+                    const cn = pair.value ?? pair.key;
                     cn.comment = cn.comment
                         ? `${item.comment}\n${cn.comment}`
                         : item.comment;
                 }
                 item = pair;
             }
-            seq.items[i] = Node.isPair(item) ? item : new Pair.Pair(item);
+            seq.items[i] = identity.isPair(item) ? item : new Pair.Pair(item);
         }
     }
     else
@@ -16318,7 +17471,7 @@ exports.schema = schema;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var Pair = __webpack_require__(3497);
 var YAMLMap = __webpack_require__(6761);
 
@@ -16329,9 +17482,10 @@ class YAMLSet extends YAMLMap.YAMLMap {
     }
     add(key) {
         let pair;
-        if (Node.isPair(key))
+        if (identity.isPair(key))
             pair = key;
-        else if (typeof key === 'object' &&
+        else if (key &&
+            typeof key === 'object' &&
             'key' in key &&
             'value' in key &&
             key.value === null)
@@ -16342,10 +17496,14 @@ class YAMLSet extends YAMLMap.YAMLMap {
         if (!prev)
             this.items.push(pair);
     }
+    /**
+     * If `keepPair` is `true`, returns the Pair matching `key`.
+     * Otherwise, returns the value of that Pair's key.
+     */
     get(key, keepPair) {
         const pair = YAMLMap.findPair(this.items, key);
-        return !keepPair && Node.isPair(pair)
-            ? Node.isScalar(pair.key)
+        return !keepPair && identity.isPair(pair)
+            ? identity.isScalar(pair.key)
                 ? pair.key.value
                 : pair.key
             : pair;
@@ -16372,6 +17530,17 @@ class YAMLSet extends YAMLMap.YAMLMap {
         else
             throw new Error('Set items must all have null values');
     }
+    static from(schema, iterable, ctx) {
+        const { replacer } = ctx;
+        const set = new this(schema);
+        if (iterable && Symbol.iterator in Object(iterable))
+            for (let value of iterable) {
+                if (typeof replacer === 'function')
+                    value = replacer.call(iterable, value, value);
+                set.items.push(Pair.createPair(value, null, ctx));
+            }
+        return set;
+    }
 }
 YAMLSet.tag = 'tag:yaml.org,2002:set';
 const set = {
@@ -16380,8 +17549,9 @@ const set = {
     nodeClass: YAMLSet,
     default: false,
     tag: 'tag:yaml.org,2002:set',
+    createNode: (schema, iterable, ctx) => YAMLSet.from(schema, iterable, ctx),
     resolve(map, onError) {
-        if (Node.isMap(map)) {
+        if (identity.isMap(map)) {
             if (map.hasAllNullValues(true))
                 return Object.assign(new YAMLSet(), map);
             else
@@ -16390,17 +17560,6 @@ const set = {
         else
             onError('Expected a mapping for this tag');
         return map;
-    },
-    createNode(schema, iterable, ctx) {
-        const { replacer } = ctx;
-        const set = new YAMLSet(schema);
-        if (iterable && Symbol.iterator in Object(iterable))
-            for (let value of iterable) {
-                if (typeof replacer === 'function')
-                    value = replacer.call(iterable, value, value);
-                set.items.push(Pair.createPair(value, null, ctx));
-            }
-        return set;
     }
 };
 
@@ -16461,7 +17620,7 @@ function stringifySexagesimal(node) {
     }
     return (sign +
         parts
-            .map(n => (n < 10 ? '0' + String(n) : String(n)))
+            .map(n => String(n).padStart(2, '0'))
             .join(':')
             .replace(/000000\d*$/, '') // % 60 may introduce error
     );
@@ -16678,94 +17837,124 @@ exports.foldFlowLines = foldFlowLines;
 
 
 var anchors = __webpack_require__(584);
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
+var stringifyComment = __webpack_require__(5577);
 var stringifyString = __webpack_require__(6084);
 
-const createStringifyContext = (doc, options) => ({
-    anchors: new Set(),
-    doc,
-    indent: '',
-    indentStep: typeof options.indent === 'number' ? ' '.repeat(options.indent) : '  ',
-    options: Object.assign({
+function createStringifyContext(doc, options) {
+    const opt = Object.assign({
+        blockQuote: true,
+        commentString: stringifyComment.stringifyComment,
         defaultKeyType: null,
         defaultStringType: 'PLAIN',
         directives: null,
         doubleQuotedAsJSON: false,
         doubleQuotedMinMultiLineLength: 40,
         falseStr: 'false',
+        flowCollectionPadding: true,
         indentSeq: true,
         lineWidth: 80,
         minContentWidth: 20,
         nullStr: 'null',
         simpleKeys: false,
-        singleQuote: false,
+        singleQuote: null,
         trueStr: 'true',
         verifyAliasOrder: true
-    }, options)
-});
+    }, doc.schema.toStringOptions, options);
+    let inFlow;
+    switch (opt.collectionStyle) {
+        case 'block':
+            inFlow = false;
+            break;
+        case 'flow':
+            inFlow = true;
+            break;
+        default:
+            inFlow = null;
+    }
+    return {
+        anchors: new Set(),
+        doc,
+        flowCollectionPadding: opt.flowCollectionPadding ? ' ' : '',
+        indent: '',
+        indentStep: typeof opt.indent === 'number' ? ' '.repeat(opt.indent) : '  ',
+        inFlow,
+        options: opt
+    };
+}
 function getTagObject(tags, item) {
     if (item.tag) {
         const match = tags.filter(t => t.tag === item.tag);
         if (match.length > 0)
-            return match.find(t => t.format === item.format) || match[0];
+            return match.find(t => t.format === item.format) ?? match[0];
     }
     let tagObj = undefined;
     let obj;
-    if (Node.isScalar(item)) {
+    if (identity.isScalar(item)) {
         obj = item.value;
-        const match = tags.filter(t => t.identify && t.identify(obj));
+        const match = tags.filter(t => t.identify?.(obj));
         tagObj =
-            match.find(t => t.format === item.format) || match.find(t => !t.format);
+            match.find(t => t.format === item.format) ?? match.find(t => !t.format);
     }
     else {
         obj = item;
         tagObj = tags.find(t => t.nodeClass && obj instanceof t.nodeClass);
     }
     if (!tagObj) {
-        // @ts-ignore
-        const name = obj && obj.constructor ? obj.constructor.name : typeof obj;
+        const name = obj?.constructor?.name ?? typeof obj;
         throw new Error(`Tag not resolved for ${name} value`);
     }
     return tagObj;
 }
 // needs to be called before value stringifier to allow for circular anchor refs
 function stringifyProps(node, tagObj, { anchors: anchors$1, doc }) {
+    if (!doc.directives)
+        return '';
     const props = [];
-    const anchor = (Node.isScalar(node) || Node.isCollection(node)) && node.anchor;
+    const anchor = (identity.isScalar(node) || identity.isCollection(node)) && node.anchor;
     if (anchor && anchors.anchorIsValid(anchor)) {
         anchors$1.add(anchor);
         props.push(`&${anchor}`);
     }
-    if (node.tag) {
-        props.push(doc.directives.tagString(node.tag));
-    }
-    else if (!tagObj.default) {
-        props.push(doc.directives.tagString(tagObj.tag));
-    }
+    const tag = node.tag ? node.tag : tagObj.default ? null : tagObj.tag;
+    if (tag)
+        props.push(doc.directives.tagString(tag));
     return props.join(' ');
 }
 function stringify(item, ctx, onComment, onChompKeep) {
-    if (Node.isPair(item))
+    if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
-    if (Node.isAlias(item))
-        return item.toString(ctx);
+    if (identity.isAlias(item)) {
+        if (ctx.doc.directives)
+            return item.toString(ctx);
+        if (ctx.resolvedAliases?.has(item)) {
+            throw new TypeError(`Cannot stringify circular structure without alias nodes`);
+        }
+        else {
+            if (ctx.resolvedAliases)
+                ctx.resolvedAliases.add(item);
+            else
+                ctx.resolvedAliases = new Set([item]);
+            item = item.resolve(ctx.doc);
+        }
+    }
     let tagObj = undefined;
-    const node = Node.isNode(item)
+    const node = identity.isNode(item)
         ? item
         : ctx.doc.createNode(item, { onTagObj: o => (tagObj = o) });
     if (!tagObj)
         tagObj = getTagObject(ctx.doc.schema.tags, node);
     const props = stringifyProps(node, tagObj, ctx);
     if (props.length > 0)
-        ctx.indentAtStart = (ctx.indentAtStart || 0) + props.length + 1;
+        ctx.indentAtStart = (ctx.indentAtStart ?? 0) + props.length + 1;
     const str = typeof tagObj.stringify === 'function'
         ? tagObj.stringify(node, ctx, onComment, onChompKeep)
-        : Node.isScalar(node)
+        : identity.isScalar(node)
             ? stringifyString.stringifyString(node, ctx, onComment, onChompKeep)
             : node.toString(ctx, onComment, onChompKeep);
     if (!props)
         return str;
-    return Node.isScalar(node) || str[0] === '{' || str[0] === '['
+    return identity.isScalar(node) || str[0] === '{' || str[0] === '['
         ? `${props} ${str}`
         : `${props}\n${ctx.indent}${str}`;
 }
@@ -16783,124 +17972,153 @@ exports.stringify = stringify;
 
 
 var Collection = __webpack_require__(9797);
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var stringify = __webpack_require__(1922);
 var stringifyComment = __webpack_require__(5577);
 
-function stringifyCollection({ comment, flow, items }, ctx, { blockItem, flowChars, itemIndent, onChompKeep, onComment }) {
-    const { indent, indentStep } = ctx;
-    const inFlow = flow || ctx.inFlow;
-    if (inFlow)
-        itemIndent += indentStep;
-    ctx = Object.assign({}, ctx, { indent: itemIndent, inFlow, type: null });
-    let singleLineOutput = true;
+function stringifyCollection(collection, ctx, options) {
+    const flow = ctx.inFlow ?? collection.flow;
+    const stringify = flow ? stringifyFlowCollection : stringifyBlockCollection;
+    return stringify(collection, ctx, options);
+}
+function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
+    const { indent, options: { commentString } } = ctx;
+    const itemCtx = Object.assign({}, ctx, { indent: itemIndent, type: null });
     let chompKeep = false; // flag for the preceding node's status
-    const nodes = items.reduce((nodes, item, i) => {
+    const lines = [];
+    for (let i = 0; i < items.length; ++i) {
+        const item = items[i];
         let comment = null;
-        if (Node.isNode(item)) {
+        if (identity.isNode(item)) {
             if (!chompKeep && item.spaceBefore)
-                nodes.push({ comment: true, str: '' });
-            let cb = item.commentBefore;
-            if (cb && chompKeep)
-                cb = cb.replace(/^\n+/, '');
-            if (cb) {
-                if (/^\n+$/.test(cb))
-                    cb = cb.substring(1);
-                // This match will always succeed on a non-empty string
-                for (const line of cb.match(/^.*$/gm)) {
-                    const str = line === ' ' ? '#' : line ? `#${line}` : '';
-                    nodes.push({ comment: true, str });
-                }
-            }
-            if (item.comment) {
+                lines.push('');
+            addCommentBefore(ctx, lines, item.commentBefore, chompKeep);
+            if (item.comment)
                 comment = item.comment;
-                singleLineOutput = false;
-            }
         }
-        else if (Node.isPair(item)) {
-            const ik = Node.isNode(item.key) ? item.key : null;
+        else if (identity.isPair(item)) {
+            const ik = identity.isNode(item.key) ? item.key : null;
             if (ik) {
                 if (!chompKeep && ik.spaceBefore)
-                    nodes.push({ comment: true, str: '' });
-                let cb = ik.commentBefore;
-                if (cb && chompKeep)
-                    cb = cb.replace(/^\n+/, '');
-                if (cb) {
-                    if (/^\n+$/.test(cb))
-                        cb = cb.substring(1);
-                    // This match will always succeed on a non-empty string
-                    for (const line of cb.match(/^.*$/gm)) {
-                        const str = line === ' ' ? '#' : line ? `#${line}` : '';
-                        nodes.push({ comment: true, str });
-                    }
-                }
-                if (ik.comment)
-                    singleLineOutput = false;
-            }
-            if (inFlow) {
-                const iv = Node.isNode(item.value) ? item.value : null;
-                if (iv) {
-                    if (iv.comment)
-                        comment = iv.comment;
-                    if (iv.comment || iv.commentBefore)
-                        singleLineOutput = false;
-                }
-                else if (item.value == null && ik && ik.comment) {
-                    comment = ik.comment;
-                }
+                    lines.push('');
+                addCommentBefore(ctx, lines, ik.commentBefore, chompKeep);
             }
         }
         chompKeep = false;
-        let str = stringify.stringify(item, ctx, () => (comment = null), () => (chompKeep = true));
-        if (inFlow && i < items.length - 1)
-            str += ',';
-        str = stringifyComment.addComment(str, itemIndent, comment);
-        if (chompKeep && (comment || inFlow))
+        let str = stringify.stringify(item, itemCtx, () => (comment = null), () => (chompKeep = true));
+        if (comment)
+            str += stringifyComment.lineComment(str, itemIndent, commentString(comment));
+        if (chompKeep && comment)
             chompKeep = false;
-        nodes.push({ comment: false, str });
-        return nodes;
-    }, []);
+        lines.push(blockItemPrefix + str);
+    }
     let str;
-    if (nodes.length === 0) {
+    if (lines.length === 0) {
         str = flowChars.start + flowChars.end;
     }
-    else if (inFlow) {
-        const { start, end } = flowChars;
-        const strings = nodes.map(n => n.str);
-        let singleLineLength = 2;
-        for (const node of nodes) {
-            if (node.comment || node.str.includes('\n')) {
-                singleLineOutput = false;
-                break;
-            }
-            singleLineLength += node.str.length + 2;
-        }
-        if (!singleLineOutput ||
-            singleLineLength > Collection.Collection.maxFlowStringSingleLineLength) {
-            str = start;
-            for (const s of strings) {
-                str += s ? `\n${indentStep}${indent}${s}` : '\n';
-            }
-            str += `\n${indent}${end}`;
-        }
-        else {
-            str = `${start} ${strings.join(' ')} ${end}`;
-        }
-    }
     else {
-        const strings = nodes.map(blockItem);
-        str = strings.shift() || '';
-        for (const s of strings)
-            str += s ? `\n${indent}${s}` : '\n';
+        str = lines[0];
+        for (let i = 1; i < lines.length; ++i) {
+            const line = lines[i];
+            str += line ? `\n${indent}${line}` : '\n';
+        }
     }
     if (comment) {
-        str += '\n' + stringifyComment.stringifyComment(comment, indent);
+        str += '\n' + stringifyComment.indentComment(commentString(comment), indent);
         if (onComment)
             onComment();
     }
     else if (chompKeep && onChompKeep)
         onChompKeep();
     return str;
+}
+function stringifyFlowCollection({ comment, items }, ctx, { flowChars, itemIndent, onComment }) {
+    const { indent, indentStep, flowCollectionPadding: fcPadding, options: { commentString } } = ctx;
+    itemIndent += indentStep;
+    const itemCtx = Object.assign({}, ctx, {
+        indent: itemIndent,
+        inFlow: true,
+        type: null
+    });
+    let reqNewline = false;
+    let linesAtValue = 0;
+    const lines = [];
+    for (let i = 0; i < items.length; ++i) {
+        const item = items[i];
+        let comment = null;
+        if (identity.isNode(item)) {
+            if (item.spaceBefore)
+                lines.push('');
+            addCommentBefore(ctx, lines, item.commentBefore, false);
+            if (item.comment)
+                comment = item.comment;
+        }
+        else if (identity.isPair(item)) {
+            const ik = identity.isNode(item.key) ? item.key : null;
+            if (ik) {
+                if (ik.spaceBefore)
+                    lines.push('');
+                addCommentBefore(ctx, lines, ik.commentBefore, false);
+                if (ik.comment)
+                    reqNewline = true;
+            }
+            const iv = identity.isNode(item.value) ? item.value : null;
+            if (iv) {
+                if (iv.comment)
+                    comment = iv.comment;
+                if (iv.commentBefore)
+                    reqNewline = true;
+            }
+            else if (item.value == null && ik && ik.comment) {
+                comment = ik.comment;
+            }
+        }
+        if (comment)
+            reqNewline = true;
+        let str = stringify.stringify(item, itemCtx, () => (comment = null));
+        if (i < items.length - 1)
+            str += ',';
+        if (comment)
+            str += stringifyComment.lineComment(str, itemIndent, commentString(comment));
+        if (!reqNewline && (lines.length > linesAtValue || str.includes('\n')))
+            reqNewline = true;
+        lines.push(str);
+        linesAtValue = lines.length;
+    }
+    let str;
+    const { start, end } = flowChars;
+    if (lines.length === 0) {
+        str = start + end;
+    }
+    else {
+        if (!reqNewline) {
+            const len = lines.reduce((sum, line) => sum + line.length + 2, 2);
+            reqNewline = len > Collection.Collection.maxFlowStringSingleLineLength;
+        }
+        if (reqNewline) {
+            str = start;
+            for (const line of lines)
+                str += line ? `\n${indentStep}${indent}${line}` : '\n';
+            str += `\n${indent}${end}`;
+        }
+        else {
+            str = `${start}${fcPadding}${lines.join(' ')}${fcPadding}${end}`;
+        }
+    }
+    if (comment) {
+        str += stringifyComment.lineComment(str, indent, commentString(comment));
+        if (onComment)
+            onComment();
+    }
+    return str;
+}
+function addCommentBefore({ indent, options: { commentString } }, lines, comment, chompKeep) {
+    if (comment && chompKeep)
+        comment = comment.replace(/^\n+/, '');
+    if (comment) {
+        const ic = stringifyComment.indentComment(commentString(comment), indent);
+        lines.push(ic.trimStart()); // Avoid double indent on first line
+    }
 }
 
 exports.stringifyCollection = stringifyCollection;
@@ -16914,20 +18132,27 @@ exports.stringifyCollection = stringifyCollection;
 "use strict";
 
 
-const stringifyComment = (comment, indent) => /^\n+$/.test(comment)
-    ? comment.substring(1)
-    : comment.replace(/^(?!$)(?: $)?/gm, `${indent}#`);
-function addComment(str, indent, comment) {
-    return !comment
-        ? str
-        : comment.includes('\n')
-            ? `${str}\n` + stringifyComment(comment, indent)
-            : str.endsWith(' ')
-                ? `${str}#${comment}`
-                : `${str} #${comment}`;
+/**
+ * Stringifies a comment.
+ *
+ * Empty comment lines are left empty,
+ * lines consisting of a single space are replaced by `#`,
+ * and all other lines are prefixed with a `#`.
+ */
+const stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, '#');
+function indentComment(comment, indent) {
+    if (/^\n+$/.test(comment))
+        return comment.substring(1);
+    return indent ? comment.replace(/^(?! *$)/gm, indent) : comment;
 }
+const lineComment = (str, indent, comment) => str.endsWith('\n')
+    ? indentComment(comment, indent)
+    : comment.includes('\n')
+        ? '\n' + indentComment(comment, indent)
+        : (str.endsWith(' ') ? '' : ' ') + comment;
 
-exports.addComment = addComment;
+exports.indentComment = indentComment;
+exports.lineComment = lineComment;
 exports.stringifyComment = stringifyComment;
 
 
@@ -16939,38 +18164,42 @@ exports.stringifyComment = stringifyComment;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var stringify = __webpack_require__(1922);
 var stringifyComment = __webpack_require__(5577);
 
 function stringifyDocument(doc, options) {
     const lines = [];
     let hasDirectives = options.directives === true;
-    if (options.directives !== false) {
+    if (options.directives !== false && doc.directives) {
         const dir = doc.directives.toString(doc);
         if (dir) {
             lines.push(dir);
             hasDirectives = true;
         }
-        else if (doc.directives.marker)
+        else if (doc.directives.docStart)
             hasDirectives = true;
     }
     if (hasDirectives)
         lines.push('---');
+    const ctx = stringify.createStringifyContext(doc, options);
+    const { commentString } = ctx.options;
     if (doc.commentBefore) {
         if (lines.length !== 1)
             lines.unshift('');
-        lines.unshift(stringifyComment.stringifyComment(doc.commentBefore, ''));
+        const cs = commentString(doc.commentBefore);
+        lines.unshift(stringifyComment.indentComment(cs, ''));
     }
-    const ctx = stringify.createStringifyContext(doc, options);
     let chompKeep = false;
     let contentComment = null;
     if (doc.contents) {
-        if (Node.isNode(doc.contents)) {
+        if (identity.isNode(doc.contents)) {
             if (doc.contents.spaceBefore && hasDirectives)
                 lines.push('');
-            if (doc.contents.commentBefore)
-                lines.push(stringifyComment.stringifyComment(doc.contents.commentBefore, ''));
+            if (doc.contents.commentBefore) {
+                const cs = commentString(doc.contents.commentBefore);
+                lines.push(stringifyComment.indentComment(cs, ''));
+            }
             // top-level block scalars need to be indented if followed by a comment
             ctx.forceBlockIndent = !!doc.comment;
             contentComment = doc.contents.comment;
@@ -16978,7 +18207,7 @@ function stringifyDocument(doc, options) {
         const onChompKeep = contentComment ? undefined : () => (chompKeep = true);
         let body = stringify.stringify(doc.contents, ctx, () => (contentComment = null), onChompKeep);
         if (contentComment)
-            body = stringifyComment.addComment(body, '', contentComment);
+            body += stringifyComment.lineComment(body, '', commentString(contentComment));
         if ((body[0] === '|' || body[0] === '>') &&
             lines[lines.length - 1] === '---') {
             // Top-level block scalars with a preceding doc marker ought to use the
@@ -16991,13 +18220,30 @@ function stringifyDocument(doc, options) {
     else {
         lines.push(stringify.stringify(doc.contents, ctx));
     }
-    let dc = doc.comment;
-    if (dc && chompKeep)
-        dc = dc.replace(/^\n+/, '');
-    if (dc) {
-        if ((!chompKeep || contentComment) && lines[lines.length - 1] !== '')
-            lines.push('');
-        lines.push(stringifyComment.stringifyComment(dc, ''));
+    if (doc.directives?.docEnd) {
+        if (doc.comment) {
+            const cs = commentString(doc.comment);
+            if (cs.includes('\n')) {
+                lines.push('...');
+                lines.push(stringifyComment.indentComment(cs, ''));
+            }
+            else {
+                lines.push(`... ${cs}`);
+            }
+        }
+        else {
+            lines.push('...');
+        }
+    }
+    else {
+        let dc = doc.comment;
+        if (dc && chompKeep)
+            dc = dc.replace(/^\n+/, '');
+        if (dc) {
+            if ((!chompKeep || contentComment) && lines[lines.length - 1] !== '')
+                lines.push('');
+            lines.push(stringifyComment.indentComment(commentString(dc), ''));
+        }
     }
     return lines.join('\n') + '\n';
 }
@@ -17047,19 +18293,19 @@ exports.stringifyNumber = stringifyNumber;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 var Scalar = __webpack_require__(8160);
 var stringify = __webpack_require__(1922);
 var stringifyComment = __webpack_require__(5577);
 
 function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
-    const { allNullValues, doc, indent, indentStep, options: { indentSeq, simpleKeys } } = ctx;
-    let keyComment = (Node.isNode(key) && key.comment) || null;
+    const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
+    let keyComment = (identity.isNode(key) && key.comment) || null;
     if (simpleKeys) {
         if (keyComment) {
             throw new Error('With simple keys, key nodes cannot have comments');
         }
-        if (Node.isCollection(key)) {
+        if (identity.isCollection(key)) {
             const msg = 'With simple keys, collection cannot be used as a key value';
             throw new Error(msg);
         }
@@ -17067,8 +18313,8 @@ function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
     let explicitKey = !simpleKeys &&
         (!key ||
             (keyComment && value == null && !ctx.inFlow) ||
-            Node.isCollection(key) ||
-            (Node.isScalar(key)
+            identity.isCollection(key) ||
+            (identity.isScalar(key)
                 ? key.type === Scalar.Scalar.BLOCK_FOLDED || key.type === Scalar.Scalar.BLOCK_LITERAL
                 : typeof key === 'object'));
     ctx = Object.assign({}, ctx, {
@@ -17088,73 +18334,112 @@ function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
         if (allNullValues || value == null) {
             if (keyCommentDone && onComment)
                 onComment();
-            return explicitKey ? `? ${str}` : str;
+            return str === '' ? '?' : explicitKey ? `? ${str}` : str;
         }
     }
     else if ((allNullValues && !simpleKeys) || (value == null && explicitKey)) {
-        if (keyCommentDone)
-            keyComment = null;
-        if (chompKeep && !keyComment && onChompKeep)
+        str = `? ${str}`;
+        if (keyComment && !keyCommentDone) {
+            str += stringifyComment.lineComment(str, ctx.indent, commentString(keyComment));
+        }
+        else if (chompKeep && onChompKeep)
             onChompKeep();
-        return stringifyComment.addComment(`? ${str}`, ctx.indent, keyComment);
+        return str;
     }
     if (keyCommentDone)
         keyComment = null;
-    str = explicitKey
-        ? `? ${stringifyComment.addComment(str, ctx.indent, keyComment)}\n${indent}:`
-        : stringifyComment.addComment(`${str}:`, ctx.indent, keyComment);
-    let vcb = '';
-    let valueComment = null;
-    if (Node.isNode(value)) {
-        if (value.spaceBefore)
-            vcb = '\n';
-        if (value.commentBefore)
-            vcb += `\n${stringifyComment.stringifyComment(value.commentBefore, ctx.indent)}`;
+    if (explicitKey) {
+        if (keyComment)
+            str += stringifyComment.lineComment(str, ctx.indent, commentString(keyComment));
+        str = `? ${str}\n${indent}:`;
+    }
+    else {
+        str = `${str}:`;
+        if (keyComment)
+            str += stringifyComment.lineComment(str, ctx.indent, commentString(keyComment));
+    }
+    let vsb, vcb, valueComment;
+    if (identity.isNode(value)) {
+        vsb = !!value.spaceBefore;
+        vcb = value.commentBefore;
         valueComment = value.comment;
     }
-    else if (value && typeof value === 'object') {
-        value = doc.createNode(value);
+    else {
+        vsb = false;
+        vcb = null;
+        valueComment = null;
+        if (value && typeof value === 'object')
+            value = doc.createNode(value);
     }
     ctx.implicitKey = false;
-    if (!explicitKey && !keyComment && Node.isScalar(value))
+    if (!explicitKey && !keyComment && identity.isScalar(value))
         ctx.indentAtStart = str.length + 1;
     chompKeep = false;
     if (!indentSeq &&
         indentStep.length >= 2 &&
         !ctx.inFlow &&
         !explicitKey &&
-        Node.isSeq(value) &&
+        identity.isSeq(value) &&
         !value.flow &&
         !value.tag &&
         !value.anchor) {
         // If indentSeq === false, consider '- ' as part of indentation where possible
-        ctx.indent = ctx.indent.substr(2);
+        ctx.indent = ctx.indent.substring(2);
     }
     let valueCommentDone = false;
     const valueStr = stringify.stringify(value, ctx, () => (valueCommentDone = true), () => (chompKeep = true));
     let ws = ' ';
-    if (vcb || keyComment) {
-        ws = `${vcb}\n${ctx.indent}`;
+    if (keyComment || vsb || vcb) {
+        ws = vsb ? '\n' : '';
+        if (vcb) {
+            const cs = commentString(vcb);
+            ws += `\n${stringifyComment.indentComment(cs, ctx.indent)}`;
+        }
+        if (valueStr === '' && !ctx.inFlow) {
+            if (ws === '\n')
+                ws = '\n\n';
+        }
+        else {
+            ws += `\n${ctx.indent}`;
+        }
     }
-    else if (!explicitKey && Node.isCollection(value)) {
-        const flow = valueStr[0] === '[' || valueStr[0] === '{';
-        if (!flow || valueStr.includes('\n'))
-            ws = `\n${ctx.indent}`;
+    else if (!explicitKey && identity.isCollection(value)) {
+        const vs0 = valueStr[0];
+        const nl0 = valueStr.indexOf('\n');
+        const hasNewline = nl0 !== -1;
+        const flow = ctx.inFlow ?? value.flow ?? value.items.length === 0;
+        if (hasNewline || !flow) {
+            let hasPropsLine = false;
+            if (hasNewline && (vs0 === '&' || vs0 === '!')) {
+                let sp0 = valueStr.indexOf(' ');
+                if (vs0 === '&' &&
+                    sp0 !== -1 &&
+                    sp0 < nl0 &&
+                    valueStr[sp0 + 1] === '!') {
+                    sp0 = valueStr.indexOf(' ', sp0 + 1);
+                }
+                if (sp0 === -1 || nl0 < sp0)
+                    hasPropsLine = true;
+            }
+            if (!hasPropsLine)
+                ws = `\n${ctx.indent}`;
+        }
     }
-    else if (valueStr[0] === '\n')
+    else if (valueStr === '' || valueStr[0] === '\n') {
         ws = '';
+    }
+    str += ws + valueStr;
     if (ctx.inFlow) {
         if (valueCommentDone && onComment)
             onComment();
-        return str + ws + valueStr;
     }
-    else {
-        if (valueCommentDone)
-            valueComment = null;
-        if (chompKeep && !valueComment && onChompKeep)
-            onChompKeep();
-        return stringifyComment.addComment(str + ws + valueStr, ctx.indent, valueComment);
+    else if (valueComment && !valueCommentDone) {
+        str += stringifyComment.lineComment(str, ctx.indent, commentString(valueComment));
     }
+    else if (chompKeep && onChompKeep) {
+        onChompKeep();
+    }
+    return str;
 }
 
 exports.stringifyPair = stringifyPair;
@@ -17171,8 +18456,8 @@ exports.stringifyPair = stringifyPair;
 var Scalar = __webpack_require__(8160);
 var foldFlowLines = __webpack_require__(1883);
 
-const getFoldOptions = (ctx) => ({
-    indentAtStart: ctx.indentAtStart,
+const getFoldOptions = (ctx, isBlock) => ({
+    indentAtStart: isBlock ? ctx.indent.length : ctx.indentAtStart,
     lineWidth: ctx.options.lineWidth,
     minContentWidth: ctx.options.minContentWidth
 });
@@ -17285,37 +18570,62 @@ function doubleQuotedString(value, ctx) {
     str = start ? str + json.slice(start) : json;
     return implicitKey
         ? str
-        : foldFlowLines.foldFlowLines(str, indent, foldFlowLines.FOLD_QUOTED, getFoldOptions(ctx));
+        : foldFlowLines.foldFlowLines(str, indent, foldFlowLines.FOLD_QUOTED, getFoldOptions(ctx, false));
 }
 function singleQuotedString(value, ctx) {
-    if (ctx.implicitKey) {
-        if (/\n/.test(value))
-            return doubleQuotedString(value, ctx);
-    }
-    else {
-        // single quoted string can't have leading or trailing whitespace around newline
-        if (/[ \t]\n|\n[ \t]/.test(value))
-            return doubleQuotedString(value, ctx);
-    }
+    if (ctx.options.singleQuote === false ||
+        (ctx.implicitKey && value.includes('\n')) ||
+        /[ \t]\n|\n[ \t]/.test(value) // single quoted string can't have leading or trailing whitespace around newline
+    )
+        return doubleQuotedString(value, ctx);
     const indent = ctx.indent || (containsDocumentMarker(value) ? '  ' : '');
     const res = "'" + value.replace(/'/g, "''").replace(/\n+/g, `$&\n${indent}`) + "'";
     return ctx.implicitKey
         ? res
-        : foldFlowLines.foldFlowLines(res, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx));
+        : foldFlowLines.foldFlowLines(res, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
+}
+function quotedString(value, ctx) {
+    const { singleQuote } = ctx.options;
+    let qs;
+    if (singleQuote === false)
+        qs = doubleQuotedString;
+    else {
+        const hasDouble = value.includes('"');
+        const hasSingle = value.includes("'");
+        if (hasDouble && !hasSingle)
+            qs = singleQuotedString;
+        else if (hasSingle && !hasDouble)
+            qs = doubleQuotedString;
+        else
+            qs = singleQuote ? singleQuotedString : doubleQuotedString;
+    }
+    return qs(value, ctx);
+}
+// The negative lookbehind avoids a polynomial search,
+// but isn't supported yet on Safari: https://caniuse.com/js-regexp-lookbehind
+let blockEndNewlines;
+try {
+    blockEndNewlines = new RegExp('(^|(?<!\n))\n+(?!\n|$)', 'g');
+}
+catch {
+    blockEndNewlines = /\n+(?!\n|$)/g;
 }
 function blockString({ comment, type, value }, ctx, onComment, onChompKeep) {
+    const { blockQuote, commentString, lineWidth } = ctx.options;
     // 1. Block can't end in whitespace unless the last line is non-empty.
     // 2. Strings consisting of only whitespace are best rendered explicitly.
-    if (/\n[\t ]+$/.test(value) || /^\s*$/.test(value)) {
-        return doubleQuotedString(value, ctx);
+    if (!blockQuote || /\n[\t ]+$/.test(value) || /^\s*$/.test(value)) {
+        return quotedString(value, ctx);
     }
     const indent = ctx.indent ||
         (ctx.forceBlockIndent || containsDocumentMarker(value) ? '  ' : '');
-    const literal = type === Scalar.Scalar.BLOCK_FOLDED
-        ? false
-        : type === Scalar.Scalar.BLOCK_LITERAL
-            ? true
-            : !lineLengthOverLimit(value, ctx.options.lineWidth, indent.length);
+    const literal = blockQuote === 'literal'
+        ? true
+        : blockQuote === 'folded' || type === Scalar.Scalar.BLOCK_FOLDED
+            ? false
+            : type === Scalar.Scalar.BLOCK_LITERAL
+                ? true
+                : !lineLengthOverLimit(value, lineWidth, indent.length);
     if (!value)
         return literal ? '|\n' : '>\n';
     // determine chomping from whitespace at value end
@@ -17343,7 +18653,7 @@ function blockString({ comment, type, value }, ctx, onComment, onChompKeep) {
         value = value.slice(0, -end.length);
         if (end[end.length - 1] === '\n')
             end = end.slice(0, -1);
-        end = end.replace(/\n+(?!\n|$)/g, `$&${indent}`);
+        end = end.replace(blockEndNewlines, `$&${indent}`);
     }
     // determine indent indicator from whitespace at value start
     let startWithSpace = false;
@@ -17366,7 +18676,7 @@ function blockString({ comment, type, value }, ctx, onComment, onChompKeep) {
     const indentSize = indent ? '2' : '1'; // root is at -1
     let header = (literal ? '|' : '>') + (startWithSpace ? indentSize : '') + chomp;
     if (comment) {
-        header += ' #' + comment.replace(/ ?[\r\n]+/g, ' ');
+        header += ' ' + commentString(comment.replace(/ ?[\r\n]+/g, ' '));
         if (onComment)
             onComment();
     }
@@ -17379,70 +18689,57 @@ function blockString({ comment, type, value }, ctx, onComment, onChompKeep) {
         .replace(/(?:^|\n)([\t ].*)(?:([\n\t ]*)\n(?![\n\t ]))?/g, '$1$2') // more-indented lines aren't folded
         //                ^ more-ind. ^ empty     ^ capture next empty lines only at end of indent
         .replace(/\n+/g, `$&${indent}`);
-    const body = foldFlowLines.foldFlowLines(`${start}${value}${end}`, indent, foldFlowLines.FOLD_BLOCK, getFoldOptions(ctx));
+    const body = foldFlowLines.foldFlowLines(`${start}${value}${end}`, indent, foldFlowLines.FOLD_BLOCK, getFoldOptions(ctx, true));
     return `${header}\n${indent}${body}`;
 }
 function plainString(item, ctx, onComment, onChompKeep) {
-    var _a;
     const { type, value } = item;
-    const { actualString, implicitKey, indent, inFlow } = ctx;
+    const { actualString, implicitKey, indent, indentStep, inFlow } = ctx;
     if ((implicitKey && /[\n[\]{},]/.test(value)) ||
         (inFlow && /[[\]{},]/.test(value))) {
-        return doubleQuotedString(value, ctx);
+        return quotedString(value, ctx);
     }
     if (!value ||
         /^[\n\t ,[\]{}#&*!|>'"%@`]|^[?-]$|^[?-][ \t]|[\n:][ \t]|[ \t]\n|[\n\t ]#|[\n\t :]$/.test(value)) {
-        const hasDouble = value.indexOf('"') !== -1;
-        const hasSingle = value.indexOf("'") !== -1;
-        let quotedString;
-        if (hasDouble && !hasSingle) {
-            quotedString = singleQuotedString;
-        }
-        else if (hasSingle && !hasDouble) {
-            quotedString = doubleQuotedString;
-        }
-        else if (ctx.options.singleQuote) {
-            quotedString = singleQuotedString;
-        }
-        else {
-            quotedString = doubleQuotedString;
-        }
         // not allowed:
         // - empty string, '-' or '?'
         // - start with an indicator character (except [?:-]) or /[?-] /
         // - '\n ', ': ' or ' \n' anywhere
         // - '#' not preceded by a non-space char
         // - end with ' ' or ':'
-        return implicitKey || inFlow || value.indexOf('\n') === -1
+        return implicitKey || inFlow || !value.includes('\n')
             ? quotedString(value, ctx)
             : blockString(item, ctx, onComment, onChompKeep);
     }
     if (!implicitKey &&
         !inFlow &&
         type !== Scalar.Scalar.PLAIN &&
-        value.indexOf('\n') !== -1) {
+        value.includes('\n')) {
         // Where allowed & type not set explicitly, prefer block style for multiline strings
         return blockString(item, ctx, onComment, onChompKeep);
     }
-    if (indent === '' && containsDocumentMarker(value)) {
-        ctx.forceBlockIndent = true;
-        return blockString(item, ctx, onComment, onChompKeep);
+    if (containsDocumentMarker(value)) {
+        if (indent === '') {
+            ctx.forceBlockIndent = true;
+            return blockString(item, ctx, onComment, onChompKeep);
+        }
+        else if (implicitKey && indent === indentStep) {
+            return quotedString(value, ctx);
+        }
     }
     const str = value.replace(/\n+/g, `$&\n${indent}`);
     // Verify that output will be parsed as a string, as e.g. plain numbers and
     // booleans get parsed with those types in v1.2 (e.g. '42', 'true' & '0.9e-3'),
     // and others in v1.1.
     if (actualString) {
-        for (const tag of ctx.doc.schema.tags) {
-            if (tag.default &&
-                tag.tag !== 'tag:yaml.org,2002:str' &&
-                ((_a = tag.test) === null || _a === void 0 ? void 0 : _a.test(str)))
-                return doubleQuotedString(value, ctx);
-        }
+        const test = (tag) => tag.default && tag.tag !== 'tag:yaml.org,2002:str' && tag.test?.test(str);
+        const { compat, tags } = ctx.doc.schema;
+        if (tags.some(test) || compat?.some(test))
+            return quotedString(value, ctx);
     }
     return implicitKey
         ? str
-        : foldFlowLines.foldFlowLines(str, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx));
+        : foldFlowLines.foldFlowLines(str, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
 }
 function stringifyString(item, ctx, onComment, onChompKeep) {
     const { implicitKey, inFlow } = ctx;
@@ -17460,7 +18757,7 @@ function stringifyString(item, ctx, onComment, onChompKeep) {
             case Scalar.Scalar.BLOCK_FOLDED:
             case Scalar.Scalar.BLOCK_LITERAL:
                 return implicitKey || inFlow
-                    ? doubleQuotedString(ss.value, ctx) // blocks are not valid inside flow containers
+                    ? quotedString(ss.value, ctx) // blocks are not valid inside flow containers
                     : blockString(ss, ctx, onComment, onChompKeep);
             case Scalar.Scalar.QUOTE_DOUBLE:
                 return doubleQuotedString(ss.value, ctx);
@@ -17494,7 +18791,7 @@ exports.stringifyString = stringifyString;
 "use strict";
 
 
-var Node = __webpack_require__(9752);
+var identity = __webpack_require__(7560);
 
 const BREAK = Symbol('break visit');
 const SKIP = Symbol('skip children');
@@ -17530,9 +18827,152 @@ const REMOVE = Symbol('remove node');
  * specific defined one will be used for each node.
  */
 function visit(node, visitor) {
+    const visitor_ = initVisitor(visitor);
+    if (identity.isDocument(node)) {
+        const cd = visit_(null, node.contents, visitor_, Object.freeze([node]));
+        if (cd === REMOVE)
+            node.contents = null;
+    }
+    else
+        visit_(null, node, visitor_, Object.freeze([]));
+}
+// Without the `as symbol` casts, TS declares these in the `visit`
+// namespace using `var`, but then complains about that because
+// `unique symbol` must be `const`.
+/** Terminate visit traversal completely */
+visit.BREAK = BREAK;
+/** Do not visit the children of the current node */
+visit.SKIP = SKIP;
+/** Remove the current node */
+visit.REMOVE = REMOVE;
+function visit_(key, node, visitor, path) {
+    const ctrl = callVisitor(key, node, visitor, path);
+    if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
+        replaceNode(key, path, ctrl);
+        return visit_(key, ctrl, visitor, path);
+    }
+    if (typeof ctrl !== 'symbol') {
+        if (identity.isCollection(node)) {
+            path = Object.freeze(path.concat(node));
+            for (let i = 0; i < node.items.length; ++i) {
+                const ci = visit_(i, node.items[i], visitor, path);
+                if (typeof ci === 'number')
+                    i = ci - 1;
+                else if (ci === BREAK)
+                    return BREAK;
+                else if (ci === REMOVE) {
+                    node.items.splice(i, 1);
+                    i -= 1;
+                }
+            }
+        }
+        else if (identity.isPair(node)) {
+            path = Object.freeze(path.concat(node));
+            const ck = visit_('key', node.key, visitor, path);
+            if (ck === BREAK)
+                return BREAK;
+            else if (ck === REMOVE)
+                node.key = null;
+            const cv = visit_('value', node.value, visitor, path);
+            if (cv === BREAK)
+                return BREAK;
+            else if (cv === REMOVE)
+                node.value = null;
+        }
+    }
+    return ctrl;
+}
+/**
+ * Apply an async visitor to an AST node or document.
+ *
+ * Walks through the tree (depth-first) starting from `node`, calling a
+ * `visitor` function with three arguments:
+ *   - `key`: For sequence values and map `Pair`, the node's index in the
+ *     collection. Within a `Pair`, `'key'` or `'value'`, correspondingly.
+ *     `null` for the root node.
+ *   - `node`: The current node.
+ *   - `path`: The ancestry of the current node.
+ *
+ * The return value of the visitor may be used to control the traversal:
+ *   - `Promise`: Must resolve to one of the following values
+ *   - `undefined` (default): Do nothing and continue
+ *   - `visit.SKIP`: Do not visit the children of this node, continue with next
+ *     sibling
+ *   - `visit.BREAK`: Terminate traversal completely
+ *   - `visit.REMOVE`: Remove the current node, then continue with the next one
+ *   - `Node`: Replace the current node, then continue by visiting it
+ *   - `number`: While iterating the items of a sequence or map, set the index
+ *     of the next step. This is useful especially if the index of the current
+ *     node has changed.
+ *
+ * If `visitor` is a single function, it will be called with all values
+ * encountered in the tree, including e.g. `null` values. Alternatively,
+ * separate visitor functions may be defined for each `Map`, `Pair`, `Seq`,
+ * `Alias` and `Scalar` node. To define the same visitor function for more than
+ * one node type, use the `Collection` (map and seq), `Value` (map, seq & scalar)
+ * and `Node` (alias, map, seq & scalar) targets. Of all these, only the most
+ * specific defined one will be used for each node.
+ */
+async function visitAsync(node, visitor) {
+    const visitor_ = initVisitor(visitor);
+    if (identity.isDocument(node)) {
+        const cd = await visitAsync_(null, node.contents, visitor_, Object.freeze([node]));
+        if (cd === REMOVE)
+            node.contents = null;
+    }
+    else
+        await visitAsync_(null, node, visitor_, Object.freeze([]));
+}
+// Without the `as symbol` casts, TS declares these in the `visit`
+// namespace using `var`, but then complains about that because
+// `unique symbol` must be `const`.
+/** Terminate visit traversal completely */
+visitAsync.BREAK = BREAK;
+/** Do not visit the children of the current node */
+visitAsync.SKIP = SKIP;
+/** Remove the current node */
+visitAsync.REMOVE = REMOVE;
+async function visitAsync_(key, node, visitor, path) {
+    const ctrl = await callVisitor(key, node, visitor, path);
+    if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
+        replaceNode(key, path, ctrl);
+        return visitAsync_(key, ctrl, visitor, path);
+    }
+    if (typeof ctrl !== 'symbol') {
+        if (identity.isCollection(node)) {
+            path = Object.freeze(path.concat(node));
+            for (let i = 0; i < node.items.length; ++i) {
+                const ci = await visitAsync_(i, node.items[i], visitor, path);
+                if (typeof ci === 'number')
+                    i = ci - 1;
+                else if (ci === BREAK)
+                    return BREAK;
+                else if (ci === REMOVE) {
+                    node.items.splice(i, 1);
+                    i -= 1;
+                }
+            }
+        }
+        else if (identity.isPair(node)) {
+            path = Object.freeze(path.concat(node));
+            const ck = await visitAsync_('key', node.key, visitor, path);
+            if (ck === BREAK)
+                return BREAK;
+            else if (ck === REMOVE)
+                node.key = null;
+            const cv = await visitAsync_('value', node.value, visitor, path);
+            if (cv === BREAK)
+                return BREAK;
+            else if (cv === REMOVE)
+                node.value = null;
+        }
+    }
+    return ctrl;
+}
+function initVisitor(visitor) {
     if (typeof visitor === 'object' &&
         (visitor.Collection || visitor.Node || visitor.Value)) {
-        visitor = Object.assign({
+        return Object.assign({
             Alias: visitor.Node,
             Map: visitor.Node,
             Scalar: visitor.Node,
@@ -17546,100 +18986,45 @@ function visit(node, visitor) {
             Seq: visitor.Collection
         }, visitor);
     }
-    if (Node.isDocument(node)) {
-        const cd = _visit(null, node.contents, visitor, Object.freeze([node]));
-        if (cd === REMOVE)
-            node.contents = null;
-    }
-    else
-        _visit(null, node, visitor, Object.freeze([]));
+    return visitor;
 }
-// Without the `as symbol` casts, TS declares these in the `visit`
-// namespace using `var`, but then complains about that because
-// `unique symbol` must be `const`.
-/** Terminate visit traversal completely */
-visit.BREAK = BREAK;
-/** Do not visit the children of the current node */
-visit.SKIP = SKIP;
-/** Remove the current node */
-visit.REMOVE = REMOVE;
-function _visit(key, node, visitor, path) {
-    let ctrl = undefined;
+function callVisitor(key, node, visitor, path) {
     if (typeof visitor === 'function')
-        ctrl = visitor(key, node, path);
-    else if (Node.isMap(node)) {
-        if (visitor.Map)
-            ctrl = visitor.Map(key, node, path);
+        return visitor(key, node, path);
+    if (identity.isMap(node))
+        return visitor.Map?.(key, node, path);
+    if (identity.isSeq(node))
+        return visitor.Seq?.(key, node, path);
+    if (identity.isPair(node))
+        return visitor.Pair?.(key, node, path);
+    if (identity.isScalar(node))
+        return visitor.Scalar?.(key, node, path);
+    if (identity.isAlias(node))
+        return visitor.Alias?.(key, node, path);
+    return undefined;
+}
+function replaceNode(key, path, node) {
+    const parent = path[path.length - 1];
+    if (identity.isCollection(parent)) {
+        parent.items[key] = node;
     }
-    else if (Node.isSeq(node)) {
-        if (visitor.Seq)
-            ctrl = visitor.Seq(key, node, path);
+    else if (identity.isPair(parent)) {
+        if (key === 'key')
+            parent.key = node;
+        else
+            parent.value = node;
     }
-    else if (Node.isPair(node)) {
-        if (visitor.Pair)
-            ctrl = visitor.Pair(key, node, path);
+    else if (identity.isDocument(parent)) {
+        parent.contents = node;
     }
-    else if (Node.isScalar(node)) {
-        if (visitor.Scalar)
-            ctrl = visitor.Scalar(key, node, path);
+    else {
+        const pt = identity.isAlias(parent) ? 'alias' : 'scalar';
+        throw new Error(`Cannot replace node with ${pt} parent`);
     }
-    else if (Node.isAlias(node)) {
-        if (visitor.Alias)
-            ctrl = visitor.Alias(key, node, path);
-    }
-    if (Node.isNode(ctrl) || Node.isPair(ctrl)) {
-        const parent = path[path.length - 1];
-        if (Node.isCollection(parent)) {
-            parent.items[key] = ctrl;
-        }
-        else if (Node.isPair(parent)) {
-            if (key === 'key')
-                parent.key = ctrl;
-            else
-                parent.value = ctrl;
-        }
-        else if (Node.isDocument(parent)) {
-            parent.contents = ctrl;
-        }
-        else {
-            const pt = Node.isAlias(parent) ? 'alias' : 'scalar';
-            throw new Error(`Cannot replace node with ${pt} parent`);
-        }
-        return _visit(key, ctrl, visitor, path);
-    }
-    if (typeof ctrl !== 'symbol') {
-        if (Node.isCollection(node)) {
-            path = Object.freeze(path.concat(node));
-            for (let i = 0; i < node.items.length; ++i) {
-                const ci = _visit(i, node.items[i], visitor, path);
-                if (typeof ci === 'number')
-                    i = ci - 1;
-                else if (ci === BREAK)
-                    return BREAK;
-                else if (ci === REMOVE) {
-                    node.items.splice(i, 1);
-                    i -= 1;
-                }
-            }
-        }
-        else if (Node.isPair(node)) {
-            path = Object.freeze(path.concat(node));
-            const ck = _visit('key', node.key, visitor, path);
-            if (ck === BREAK)
-                return BREAK;
-            else if (ck === REMOVE)
-                node.key = null;
-            const cv = _visit('value', node.value, visitor, path);
-            if (cv === BREAK)
-                return BREAK;
-            else if (cv === REMOVE)
-                node.value = null;
-        }
-    }
-    return ctrl;
 }
 
 exports.visit = visit;
+exports.visitAsync = visitAsync;
 
 
 /***/ }),
@@ -17688,7 +19073,7 @@ module.exports = function (octokit, owner, repo) {
     let data_length = 0;
     let page = 0;
     do {
-      const { data } = await octokit.repos.listBranches({
+      const { data } = await octokit.rest.repos.listBranches({
         owner,
         repo,
         per_page: 100,
@@ -17709,7 +19094,7 @@ module.exports = function (octokit, owner, repo) {
     // TODO: Review return on error
     try {
       console.log(`Creating ref "refs/heads/${branchName}" with sha: ${github.context.sha}`);
-      await octokit.git.createRef({
+      await octokit.rest.git.createRef({
         owner,
         repo,
         ref: `refs/heads/${branchName}`,
@@ -17831,7 +19216,7 @@ module.exports = function (tags) {
 
     if (type === TYPE_FINAL) {
       const lastTag = await tags.getLastTagWithPrefix(prefix);
-      const version = lastTag.replace(prefix, '');
+      const version = lastTag ? lastTag.replace(prefix, '') : '0.0.0';
       return computeFinalTag(prefix, version);
     }
   }
@@ -17867,6 +19252,7 @@ const useTagInVersionsFile = core.getInput('use-tag-in-versions-file');
 const commitMessage = core.getInput('commit-message');
 const commitAuthor = core.getInput('commit-author');
 const commitAuthorEmail = core.getInput('commit-author-email');
+const skipCommit = core.getBooleanInput('skip-commit');
 
 // Initialize Octokit
 const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
@@ -17888,6 +19274,7 @@ try {
     commitMessage,
     commitAuthor,
     commitAuthorEmail,
+    skipCommit,
   });
 } catch (e) {
   core.setFailed(`RUN ERROR: \n\t${e}`);
@@ -17950,7 +19337,7 @@ module.exports = function (tags, branches) {
     if (type === TYPE_PRE_RELEASE) {
       const preReleaseVersion = await branches.calcPreReleaseVersionBasedOnReleaseBranches(
         currentMajor,
-        releaseBranchPrefix
+        releaseBranchPrefix,
       );
       return tags.calcPrereleaseTag(preReleaseVersion, preReleaseName);
     }
@@ -18010,7 +19397,8 @@ async function run(
     commitMessage,
     commitAuthor,
     commitAuthorEmail,
-  }
+    skipCommit,
+  },
 ) {
   const tags = newTagger(octokit, owner, repo);
   const branches = newBranches(octokit, owner, repo);
@@ -18035,6 +19423,7 @@ async function run(
     commitMessage,
     commitAuthor,
     commitAuthorEmail,
+    skipCommit,
   };
 
   console.log('Options for the action', options);
@@ -18098,7 +19487,8 @@ async function run(
         branchToTag,
         commitMessage,
         commitAuthor,
-        commitAuthorEmail
+        commitAuthorEmail,
+        skipCommit,
       );
       console.log(`Version updated in file(s)`);
     }
@@ -18208,7 +19598,7 @@ module.exports = function (octokit, owner, repo) {
     let data_length = 0;
     let page = 0;
     do {
-      const { data } = await octokit.repos.listTags({
+      const { data } = await octokit.rest.repos.listTags({
         owner,
         repo,
         per_page: 100,
@@ -18256,13 +19646,13 @@ module.exports = function (octokit, owner, repo) {
    */
   async function createTag(tagName, branch) {
     console.log('Creating tag');
-    const { data: branchData } = await octokit.repos.getBranch({
+    const { data: branchData } = await octokit.rest.repos.getBranch({
       owner,
       repo,
       branch,
     });
     const mainBranchSHA = branchData.commit.sha;
-    const { data: tagData } = await octokit.git.createTag({
+    const { data: tagData } = await octokit.rest.git.createTag({
       owner,
       repo,
       tag: tagName,
@@ -18270,7 +19660,7 @@ module.exports = function (octokit, owner, repo) {
       object: mainBranchSHA,
       type: 'commit',
     });
-    const { data: createTagData } = await octokit.git.createRef({
+    const { data: createTagData } = await octokit.rest.git.createRef({
       owner,
       repo,
       ref: `refs/tags/${tagName}`,
@@ -18326,7 +19716,7 @@ module.exports = function () {
    * @param branch The branch to make the changes
    * @returns sha The commit SHA that was made with the version update
    */
-  async function updateVersionInFileAndCommit(files, version, branch, commitMessage, author, authorEmail) {
+  async function updateVersionInFileAndCommit(files, version, branch, commitMessage, author, authorEmail, skipCommit) {
     const versionFiles = JSON.parse(files);
     console.log('parsed files are ', versionFiles);
 
@@ -18361,7 +19751,7 @@ module.exports = function () {
 
     // commit the files
     if (filesUpdated > 0) {
-      return await commitChanges(branch, commitMessage, author, authorEmail);
+      return await commitChanges(branch, commitMessage, author, authorEmail, skipCommit);
     }
   }
 
@@ -18372,14 +19762,17 @@ module.exports = function () {
    * @param commitMessage The commit message.
    * @param authorName The author name.
    * @param authorEmail The author email.
+   * @param skipCommit Do not create a release commit.
    */
-  async function commitChanges(branch, commitMessage, authorName, authorEmail) {
+  async function commitChanges(branch, commitMessage, authorName, authorEmail, skipCommit) {
     await actions.exec('git', ['checkout', branch]);
     await actions.exec('git', ['add', '-A']);
     await actions.exec('git', ['config', '--local', 'user.name', authorName]);
     await actions.exec('git', ['config', '--local', 'user.email', authorEmail]);
     await actions.exec('git', ['commit', '--no-verify', '-m', commitMessage]);
-    await actions.exec('git', ['push']);
+    if (!skipCommit) {
+      await actions.exec('git', ['push']);
+    }
   }
 
   function writeToFile(yamlString, filePath) {
@@ -18583,6 +19976,46 @@ module.exports = require("zlib");;
 /******/ 	}
 /******/ 	
 /************************************************************************/
+/******/ 	/* webpack/runtime/compat get default export */
+/******/ 	(() => {
+/******/ 		// getDefaultExport function for compatibility with non-harmony modules
+/******/ 		__webpack_require__.n = (module) => {
+/******/ 			var getter = module && module.__esModule ?
+/******/ 				() => module['default'] :
+/******/ 				() => module;
+/******/ 			__webpack_require__.d(getter, { a: getter });
+/******/ 			return getter;
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/define property getters */
+/******/ 	(() => {
+/******/ 		// define getter functions for harmony exports
+/******/ 		__webpack_require__.d = (exports, definition) => {
+/******/ 			for(var key in definition) {
+/******/ 				if(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {
+/******/ 					Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 				}
+/******/ 			}
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/hasOwnProperty shorthand */
+/******/ 	(() => {
+/******/ 		__webpack_require__.o = (obj, prop) => Object.prototype.hasOwnProperty.call(obj, prop)
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/make namespace object */
+/******/ 	(() => {
+/******/ 		// define __esModule on exports
+/******/ 		__webpack_require__.r = (exports) => {
+/******/ 			if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 				Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 			}
+/******/ 			Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 		};
+/******/ 	})();
+/******/ 	
 /******/ 	/* webpack/runtime/compat */
 /******/ 	
 /******/ 	__webpack_require__.ab = __dirname + "/";/************************************************************************/
