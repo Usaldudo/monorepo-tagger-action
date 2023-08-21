@@ -12,15 +12,12 @@ on:
     paths:
       - "src/**/*"
 
-env:
-  GITHUB_TOKEN: ${{ secrets.PATNAME }}
-
 jobs:
   quality-checks:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
+      - uses: actions/setup-node@v3
         with:
           node-version: '16'
           cache: 'npm'
@@ -32,18 +29,20 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-20.04
     needs: quality-checks
+    permissions:
+      # Give the default GITHUB_TOKEN write permission to commit and push the changed files back to the repository.
+      contents: write
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: '16'
+          cache: 'npm'
       - run: npm ci
       - run: npm run build
       - name: Commit files
-        run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
-          if [[ `git status --porcelain` ]]; then
-              git commit -m "Update build [skip-ci]" -a
-              git push
-          fi
+        uses: stefanzweifel/git-auto-commit-action@v4
+        id: commit-and-push
+        with:
+          commit_message: 'Update build [skip-ci]'
+
