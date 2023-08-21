@@ -48,7 +48,7 @@ module.exports = function (tags) {
 
     if (type === TYPE_FINAL) {
       const lastTag = await tags.getLastTagWithPrefix(prefix);
-      const version = lastTag.replace(prefix, '');
+      const version = lastTag ? lastTag.replace(prefix, '') : '0.0.0';
       return computeFinalTag(prefix, version);
     }
   }
