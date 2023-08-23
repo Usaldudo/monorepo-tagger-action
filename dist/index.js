@@ -19253,6 +19253,7 @@ const commitMessage = core.getInput('commit-message');
 const commitAuthor = core.getInput('commit-author');
 const commitAuthorEmail = core.getInput('commit-author-email');
 const skipCommit = core.getBooleanInput('skip-commit');
+const pull = core.getBooleanInput('pull');
 
 // Initialize Octokit
 const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
@@ -19275,6 +19276,7 @@ try {
     commitAuthor,
     commitAuthorEmail,
     skipCommit,
+    pull,
   });
 } catch (e) {
   core.setFailed(`RUN ERROR: \n\t${e}`);
@@ -19791,7 +19793,7 @@ module.exports = function () {
             await actions.exec('git', ['push']);
             break;
           } catch (error) {
-            if (error.message.includes(`failed to push some refs to `)) {
+            if (error.message.includes(`The process '/usr/bin/git' failed with exit code 1`)) {
               console.error('Error: Git push is out of date with refs');
               await actions.exec('git', ['pull', '--rebase']);
               retryCount++;
