@@ -13,6 +13,7 @@ describe('update file with version', () => {
   let author = 'author';
   let authorEmail = 'author@email.com';
   let skipCommit = false;
+  let pull = false;
 
   test('error on no yml file', async () => {
     // GIVEN a file that is not yml
@@ -27,6 +28,7 @@ describe('update file with version', () => {
       author,
       authorEmail,
       skipCommit,
+      pull,
     );
 
     // THEN no writes and no commits are made
@@ -50,6 +52,7 @@ describe('update file with version', () => {
       author,
       authorEmail,
       skipCommit,
+      pull,
     );
 
     // THEN two file writes occurs
@@ -69,6 +72,7 @@ describe('update file with version', () => {
       author,
       authorEmail,
       skipCommit,
+      pull,
     );
 
     // THEN one file is written
@@ -91,6 +95,7 @@ describe('update file with version', () => {
       author,
       authorEmail,
       skipCommit,
+      pull,
     );
 
     // THEN one file is written
@@ -114,6 +119,7 @@ describe('update file with version', () => {
       author,
       authorEmail,
       skipCommit,
+      pull,
     );
 
     // THEN file was commited
@@ -145,11 +151,11 @@ describe('update file with version', () => {
       commitMessage,
       author,
       authorEmail,
-      true,
+      pull,
     );
 
     // THEN file was commited
-    expect(actions.exec).toHaveBeenCalledTimes(5);
+    expect(actions.exec).toHaveBeenCalledTimes(6);
 
     // AND the commit is correct
     const checkoutParams = actions.exec.mock.calls[0][1];

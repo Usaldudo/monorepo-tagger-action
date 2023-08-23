@@ -30,6 +30,7 @@ async function run(
     commitAuthor,
     commitAuthorEmail,
     skipCommit,
+    pull,
   },
 ) {
   const tags = newTagger(octokit, owner, repo);
@@ -56,6 +57,7 @@ async function run(
     commitAuthor,
     commitAuthorEmail,
     skipCommit,
+    pull,
   };
 
   console.log('Options for the action', options);
@@ -121,6 +123,7 @@ async function run(
         commitAuthor,
         commitAuthorEmail,
         skipCommit,
+        pull,
       );
       console.log(`Version updated in file(s)`);
     }

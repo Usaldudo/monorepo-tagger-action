@@ -60,6 +60,10 @@ inputs:
     description: "Do not create a release commit"
     default: "false"
     required: false
+  pull:
+    description: 'Enable pull mode, e.g. "true" or "false"'
+    required: false
+    default: 'false'
 
 outputs:
   tag:

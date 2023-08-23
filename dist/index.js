@@ -19398,6 +19398,7 @@ async function run(
     commitAuthor,
     commitAuthorEmail,
     skipCommit,
+    pull,
   },
 ) {
   const tags = newTagger(octokit, owner, repo);
@@ -19424,6 +19425,7 @@ async function run(
     commitAuthor,
     commitAuthorEmail,
     skipCommit,
+    pull,
   };
 
   console.log('Options for the action', options);
@@ -19489,6 +19491,7 @@ async function run(
         commitAuthor,
         commitAuthorEmail,
         skipCommit,
+        pull,
       );
       console.log(`Version updated in file(s)`);
     }
@@ -19716,7 +19719,16 @@ module.exports = function () {
    * @param branch The branch to make the changes
    * @returns sha The commit SHA that was made with the version update
    */
-  async function updateVersionInFileAndCommit(files, version, branch, commitMessage, author, authorEmail, skipCommit) {
+  async function updateVersionInFileAndCommit(
+    files,
+    version,
+    branch,
+    commitMessage,
+    author,
+    authorEmail,
+    skipCommit,
+    pull,
+  ) {
     const versionFiles = JSON.parse(files);
     console.log('parsed files are ', versionFiles);
 
@@ -19751,7 +19763,7 @@ module.exports = function () {
 
     // commit the files
     if (filesUpdated > 0) {
-      return await commitChanges(branch, commitMessage, author, authorEmail, skipCommit);
+      return await commitChanges(branch, commitMessage, author, authorEmail, skipCommit, pull);
     }
   }
 
@@ -19763,15 +19775,34 @@ module.exports = function () {
    * @param authorName The author name.
    * @param authorEmail The author email.
    * @param skipCommit Do not create a release commit.
+   * @param pull Pull commits before push.
    */
-  async function commitChanges(branch, commitMessage, authorName, authorEmail, skipCommit) {
+  async function commitChanges(branch, commitMessage, authorName, authorEmail, skipCommit, pull) {
     await actions.exec('git', ['checkout', branch]);
     await actions.exec('git', ['add', '-A']);
     await actions.exec('git', ['config', '--local', 'user.name', authorName]);
     await actions.exec('git', ['config', '--local', 'user.email', authorEmail]);
     await actions.exec('git', ['commit', '--no-verify', '-m', commitMessage]);
     if (!skipCommit) {
-      await actions.exec('git', ['push']);
+      if (pull) {
+        let retryCount = 0;
+        while (retryCount < 5) {
+          try {
+            await actions.exec('git', ['push']);
+            break;
+          } catch (error) {
+            if (error.message.includes(`failed to push some refs to `)) {
+              console.error('Error: Git push is out of date with refs');
+              await actions.exec('git', ['pull', '--rebase']);
+              retryCount++;
+            } else {
+              throw error;
+            }
+          }
+        }
+      } else {
+        await actions.exec('git', ['push']);
+      }
     }
   }
 

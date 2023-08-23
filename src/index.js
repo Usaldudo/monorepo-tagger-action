@@ -19,6 +19,7 @@ const commitMessage = core.getInput('commit-message');
 const commitAuthor = core.getInput('commit-author');
 const commitAuthorEmail = core.getInput('commit-author-email');
 const skipCommit = core.getBooleanInput('skip-commit');
+const pull = core.getBooleanInput('pull');
 
 // Initialize Octokit
 const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
@@ -41,6 +42,7 @@ try {
     commitAuthor,
     commitAuthorEmail,
     skipCommit,
+    pull,
   });
 } catch (e) {
   core.setFailed(`RUN ERROR: \n\t${e}`);
